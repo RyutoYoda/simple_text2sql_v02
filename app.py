@@ -6,8 +6,8 @@ import numpy as np
 import re
 from openai import OpenAI
 
-st.set_page_config(page_title="🧠 Chat2SQL Mini", layout="wide")
-st.title("🦆 Chat2SQL (最小・安定版)")
+st.set_page_config(page_title="🧠 Chat2SQL 安定版", layout="wide")
+st.title("🦆 Chat2SQL × GPT-3.5 × DuckDB （最終安定版）")
 
 openai_api_key = st.sidebar.text_input("🔑 OpenAI API Key", type="password")
 
@@ -19,6 +19,7 @@ if uploaded_file:
     else:
         df = pd.read_parquet(uploaded_file)
 
+    # 日付型に変換
     for col in df.columns:
         if "date" in col.lower() or "time" in col.lower():
             try:
@@ -26,7 +27,7 @@ if uploaded_file:
             except:
                 pass
 
-    st.success("✅ データを読み込みました！")
+    st.success("✅ データを読み込みました")
     st.dataframe(df.head())
 
     duck_conn = duckdb.connect()
@@ -45,10 +46,10 @@ if uploaded_file:
                 schema_desc = "\n".join([f"{col} ({dtype})" for col, dtype in zip(df.columns, df.dtypes)])
 
                 prompt = f"""
-あなたはDuckDB向けのSQLを生成するデータアナリストです。
-テーブル名は常に `data` です。
-DuckDBでは文字列型の列を日時関数に使う場合、必ず `CAST(列名 AS DATE)` にしてください。
-SQL文だけ返してください。
+あなたはDuckDBに対してSQLを生成するアシスタントです。
+テーブル名は `data` です。
+DuckDBでは文字列を日付関数に使う場合、必ず `CAST(列 AS DATE)` を使ってください。
+出力はSQL文のみ。コードブロックや装飾なしで返してください。
 
 スキーマ:
 {schema_desc}
@@ -79,7 +80,7 @@ SQL文だけ返してください。
 
                         # グラフ種自動判定
                         q = user_input.lower()
-                        if any(w in q for w in ["割合", "比率", "シェア","円"]):
+                        if any(w in q for w in ["割合", "比率", "シェア"]):
                             chart_type = "pie"
                         elif any(w in q for w in ["相関", "関係", "関連"]):
                             chart_type = "scatter"
@@ -88,28 +89,34 @@ SQL文だけ返してください。
                         else:
                             chart_type = "bar"
 
+                        # xをdatetimeに変換してみる（折れ線・順序安定化のため）
                         try:
                             result_df[x] = pd.to_datetime(result_df[x])
                         except:
                             pass
 
+                        # グラフ描画（型チェックつき）
                         if chart_type == "pie":
                             fig = px.pie(result_df, names=x, values=y)
+                            st.plotly_chart(fig, use_container_width=True)
+
                         elif chart_type == "scatter":
-                            fig = px.scatter(result_df, x=x, y=y, trendline="ols")
-                            try:
-                                corr = np.corrcoef(result_df[x], result_df[y])[0, 1]
-                                st.markdown(f"📈 **相関係数**: `{corr:.3f}`")
-                            except:
-                                pass
+                            if pd.api.types.is_numeric_dtype(result_df[x]) and pd.api.types.is_numeric_dtype(result_df[y]):
+                                fig = px.scatter(result_df, x=x, y=y)
+                                st.plotly_chart(fig, use_container_width=True)
+                            else:
+                                st.warning("⚠️ 散布図は数値列同士にのみ対応しています。")
+
                         elif chart_type == "line":
                             fig = px.line(result_df, x=x, y=y)
-                        else:
-                            fig = px.bar(result_df, x=x, y=y)
+                            st.plotly_chart(fig, use_container_width=True)
 
-                        st.plotly_chart(fig, use_container_width=True)
+                        else:  # bar
+                            fig = px.bar(result_df, x=x, y=y)
+                            st.plotly_chart(fig, use_container_width=True)
+
                     else:
-                        st.info("📉 自動描画には2列の結果が必要です。")
+                        st.info("📉 自動グラフ描画には2列の結果が必要です。")
 
                 except Exception as e:
                     st.error(f"❌ エラー: {e}")
