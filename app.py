@@ -6,33 +6,12 @@ import numpy as np
 import re
 from openai import OpenAI
 
-st.set_page_config(page_title="🦆 Chat2SQL Auto Graph", layout="wide")
-st.title("🦆 Chat2SQL × GPT-3.5 × DuckDB 📊")
+st.set_page_config(page_title="🧠 Chat2SQL Mini", layout="wide")
+st.title("🦆 Chat2SQL (最小・安定版)")
 
 openai_api_key = st.sidebar.text_input("🔑 OpenAI API Key", type="password")
 
 uploaded_file = st.file_uploader("📄 CSVまたはParquetファイルをアップロード", type=["csv", "parquet"])
-
-# 🔍 グラフ用の列選定関数（柔軟化）
-def choose_chart_columns(df, chart_type):
-    numeric_cols = df.select_dtypes(include="number").columns.tolist()
-    datetime_cols = df.select_dtypes(include=["datetime", "datetimetz"]).columns.tolist()
-    object_cols = df.select_dtypes(include="object").columns.tolist()
-
-    # 柔軟に日付列として object も許容
-    time_cols = datetime_cols or object_cols
-
-    if chart_type == "line" and time_cols and numeric_cols:
-        return time_cols[0], numeric_cols[0]
-    if chart_type == "scatter" and len(numeric_cols) >= 2:
-        return numeric_cols[0], numeric_cols[1]
-    if chart_type == "pie" and object_cols and numeric_cols:
-        return object_cols[0], numeric_cols[0]
-    if object_cols and numeric_cols:
-        return object_cols[0], numeric_cols[0]
-    elif len(numeric_cols) >= 2:
-        return numeric_cols[0], numeric_cols[1]
-    return None, None
 
 if uploaded_file:
     if uploaded_file.name.endswith(".csv"):
@@ -40,7 +19,6 @@ if uploaded_file:
     else:
         df = pd.read_parquet(uploaded_file)
 
-    # ⏰ 日付らしき列を自動変換
     for col in df.columns:
         if "date" in col.lower() or "time" in col.lower():
             try:
@@ -54,17 +32,6 @@ if uploaded_file:
     duck_conn = duckdb.connect()
     duck_conn.register("data", df)
 
-    with st.expander("💡 サンプル質問"):
-        st.markdown("""
-        - 月ごとの売上合計を表示してください
-        - 商品カテゴリごとの平均価格は？
-        - 地域別の販売数を棒グラフで見せて
-        - 最も売れた商品は？
-        - 地域ごとの売上割合は？
-        - 単価と数量の相関は？
-        - 月別の販売数推移を教えて
-        """)
-
     user_input = st.chat_input("自然言語で質問してください")
 
     if user_input and openai_api_key:
@@ -73,20 +40,18 @@ if uploaded_file:
 
         with st.chat_message("assistant"):
             with st.spinner("GPTがSQLを生成中..."):
-
                 client = OpenAI(api_key=openai_api_key)
+
                 schema_desc = "\n".join([f"{col} ({dtype})" for col, dtype in zip(df.columns, df.dtypes)])
 
                 prompt = f"""
-あなたはデータ分析アシスタントです。
-以下のスキーマのテーブル `data` に対して、質問に対応する DuckDB形式のSQLを生成してください。
+あなたはDuckDB向けのSQLを生成するデータアナリストです。
+テーブル名は常に `data` です。
+DuckDBでは文字列型の列を日時関数に使う場合、必ず `CAST(列名 AS DATE)` にしてください。
+SQL文だけ返してください。
 
 スキーマ:
 {schema_desc}
-
-注意:
-- `strftime()` や `format_date()` を使うときは、列を必ず `CAST(列 AS DATE)` にしてください。
-- 出力はSQL文だけ、装飾なしで返してください。
 
 質問:
 {user_input}
@@ -98,60 +63,53 @@ if uploaded_file:
                         messages=[
                             {"role": "system", "content": "あなたはSQLを生成するデータアナリストです。"},
                             {"role": "user", "content": prompt}
-                        ],
-                        temperature=0.3
+                        ]
                     )
 
                     raw_sql = response.choices[0].message.content.strip()
                     sql = re.sub(r"```sql|```", "", raw_sql).strip()
+
                     st.markdown(f"🧠 **生成されたSQL:**\n```sql\n{sql}\n```")
 
                     result_df = duck_conn.execute(sql).fetchdf()
                     st.dataframe(result_df)
 
-                    # グラフ種の自動推定
-                    q = user_input.lower()
-                    if any(w in q for w in ["割合", "比率", "シェア"]):
-                        chart_type = "pie"
-                    elif any(w in q for w in ["相関", "関係", "関連"]):
-                        chart_type = "scatter"
-                    elif any(w in q for w in ["時間", "日時", "推移", "傾向"]):
-                        chart_type = "line"
-                    else:
-                        chart_type = "bar"
+                    if result_df.shape[1] == 2:
+                        x, y = result_df.columns[0], result_df.columns[1]
 
-                    x, y = choose_chart_columns(result_df, chart_type)
+                        # グラフ種自動判定
+                        q = user_input.lower()
+                        if any(w in q for w in ["割合", "比率", "シェア"]):
+                            chart_type = "pie"
+                        elif any(w in q for w in ["相関", "関係", "関連"]):
+                            chart_type = "scatter"
+                        elif any(w in q for w in ["時間", "日時", "推移", "傾向", "月", "日"]):
+                            chart_type = "line"
+                        else:
+                            chart_type = "bar"
 
-                    if x and y:
-                        # x軸が日付っぽければ datetime にしておく（並び安定）
                         try:
                             result_df[x] = pd.to_datetime(result_df[x])
                         except:
                             pass
 
-                        # グラフ描画
-                        if chart_type == "bar":
-                            fig = px.bar(result_df, x=x, y=y)
-                        elif chart_type == "line":
-                            fig = px.line(result_df, x=x, y=y)
+                        if chart_type == "pie":
+                            fig = px.pie(result_df, names=x, values=y)
                         elif chart_type == "scatter":
                             fig = px.scatter(result_df, x=x, y=y, trendline="ols")
-                        elif chart_type == "pie":
-                            fig = px.pie(result_df, names=x, values=y)
-                        else:
-                            fig = px.bar(result_df, x=x, y=y)
-
-                        st.plotly_chart(fig, use_container_width=True)
-
-                        # 相関係数（scatterのとき）
-                        if chart_type == "scatter":
                             try:
                                 corr = np.corrcoef(result_df[x], result_df[y])[0, 1]
                                 st.markdown(f"📈 **相関係数**: `{corr:.3f}`")
                             except:
-                                st.info("相関係数の計算に失敗しました。")
+                                pass
+                        elif chart_type == "line":
+                            fig = px.line(result_df, x=x, y=y)
+                        else:
+                            fig = px.bar(result_df, x=x, y=y)
+
+                        st.plotly_chart(fig, use_container_width=True)
                     else:
-                        st.info("📉 自動的にグラフ化できる列が見つかりませんでした。")
+                        st.info("📉 自動描画には2列の結果が必要です。")
 
                 except Exception as e:
                     st.error(f"❌ エラー: {e}")
