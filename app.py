@@ -9,7 +9,7 @@ from openai import OpenAI
 import base64
 
 st.set_page_config(page_title="Vizzy", layout="wide")
-st.title("📊 Vizzy")
+st.title("🧙‍♀️Vizzy")
 # 画像をタイトルの下に追加する関数
 def load_image(image_path):
     with open(image_path, "rb") as img_file:
@@ -69,7 +69,7 @@ if uploaded_file:
 - **棒グラフ** → 「カテゴリごとの売上を棒グラフで表示して」
 - **折れ線グラフ（時系列）** → 「月別の売上推移を教えて」
 - **円グラフ** → 「地域ごとの売上割合を円グラフで見せて」
-- **散布図** → 「気温とアイスの売上の関係を散布図で見せて」
+- **散布図** → 「気温と商品の売上の関係を散布図で見せて」
         """)
 
     # ユーザーの自然言語入力
@@ -149,13 +149,13 @@ DuckDBでは文字列を日付関数に使う場合、必ず `CAST(列 AS DATE)`
 
                         # 💬 グラフごとの一言コメント
                         if chart_type == "pie":
-                            st.info("📊 円グラフでカテゴリごとの割合を可視化します。")
+                            st.info("📊 円グラフでカテゴリごとの割合を可視化しています")
                         elif chart_type == "scatter":
-                            st.info("📈 散布図で2つの数値の関係性を視覚化します。相関係数も表示されます。")
+                            st.info("📈 散布図で2つの数値の関係性を視覚化しています。")
                         elif chart_type == "line":
-                            st.info("📈 折れ線グラフで時系列の推移を表示します。")
+                            st.info("📈 折れ線グラフで時系列の推移を表示しています。")
                         else:
-                            st.info("📊 棒グラフでカテゴリ別の比較を表示します。")
+                            st.info("📊 棒グラフでカテゴリ別の比較を表示しています。")
 
                         # 散布図：数値変換
                         if chart_type == "scatter":
