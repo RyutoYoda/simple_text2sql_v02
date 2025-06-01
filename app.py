@@ -2,16 +2,13 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import plotly.express as px
-import openai
-import os
+from openai import OpenAI
 
-st.set_page_config(page_title="🧠 Chat2SQL with OpenAI", layout="wide")
-st.title("🧠 text2SQL_ver1")
+st.set_page_config(page_title="🧠 Chat2SQL_ver1", layout="wide")
+st.title("🧠 Chat2SQL with OpenAI (gpt-3.5-turbo)")
 
-# --- OpenAI APIキー入力 ---
 openai_api_key = st.sidebar.text_input("🔑 OpenAI API Key", type="password")
 
-# --- データ読み込み ---
 uploaded_file = st.file_uploader("📄 CSVまたはParquetファイルをアップロード", type=["csv", "parquet"])
 
 if uploaded_file:
@@ -26,7 +23,6 @@ if uploaded_file:
     conn = sqlite3.connect(":memory:")
     df.to_sql("data", conn, index=False, if_exists="replace")
 
-    # --- ユーザーの自然言語入力 ---
     user_input = st.chat_input("データに関する質問を入力してください")
 
     if user_input and openai_api_key:
@@ -36,13 +32,12 @@ if uploaded_file:
         with st.chat_message("assistant"):
             with st.spinner("SQLを生成中..."):
 
-                openai.api_key = openai_api_key
+                client = OpenAI(api_key=openai_api_key)
 
                 schema_desc = "\n".join([f"{col} ({dtype})" for col, dtype in zip(df.columns, df.dtypes)])
 
                 prompt = f"""
-あなたはSQLデータベースのアシスタントです。
-次のテーブルに基づいて、SQLite形式で適切なSQLクエリを生成してください。
+以下のスキーマに基づいて、質問に対応する **SQLite形式のSQLクエリ** を生成してください。
 
 スキーマ:
 {schema_desc}
@@ -54,8 +49,8 @@ SQLクエリだけを返してください。
 """
 
                 try:
-                    response = openai.ChatCompletion.create(
-                        model="gpt-4o",  # gpt-3.5-turbo でも可
+                    response = client.chat.completions.create(
+                        model="gpt-3.5-turbo",
                         messages=[
                             {"role": "system", "content": "あなたはSQL専門家です。"},
                             {"role": "user", "content": prompt}
