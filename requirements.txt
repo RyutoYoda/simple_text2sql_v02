@@ -1,7 +1,4 @@
 streamlit
 pandas
 plotly
-sqlite3-bro  # 一部環境で必要
-torch>=2.1.0
-transformers>=4.38.0
-accelerate
+openai
