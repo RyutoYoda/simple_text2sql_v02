@@ -3,3 +3,5 @@ pandas
 plotly
 duckdb
 openai>=1.0.0
+statsmodels 
+numpy      
