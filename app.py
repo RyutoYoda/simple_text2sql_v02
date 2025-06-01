@@ -6,6 +6,7 @@ import numpy as np
 import re
 import os
 from openai import OpenAI
+import base64
 
 st.set_page_config(page_title="Vizzy", layout="wide")
 st.title("📊 Vizzy")
@@ -14,7 +15,7 @@ def load_image(image_path):
     with open(image_path, "rb") as img_file:
         return base64.b64encode(img_file.read()).decode()
 
-image_path = "スクリーンショット 2025-06-02 0.03.30.png"  
+image_path = "vizzy_logo.png"  
 image_base64 = load_image(image_path)
 st.markdown(
     f"""
