@@ -4,36 +4,14 @@ import duckdb
 import plotly.express as px
 import numpy as np
 import re
-import os
 from openai import OpenAI
 
 st.set_page_config(page_title="🧠 Chat2SQL", layout="wide")
 st.title("🧠 Chat2SQL")
 
-# ✅ 環境変数からOpenAI APIキーを取得
-openai_api_key = os.getenv("OPENAI_API_KEY")
+openai_api_key = st.sidebar.text_input("🔑 OpenAI API Key", type="password")
 
 uploaded_file = st.file_uploader("📄 CSVまたはParquetファイルをアップロード", type=["csv", "parquet"])
-
-# ✅ サンプル質問をグラフ種別で案内
-with st.expander("💡 グラフのサンプル質問"):
-    st.markdown("""
-**📊 棒グラフ**
-- 商品カテゴリごとの売上を表示して
-- 地域別の販売数をグラフで見たい
-
-**📈 折れ線グラフ（時間推移）**
-- 月別の売上推移を教えて
-- 時系列でアイスの売上を見せて
-
-**📉 散布図（数値2軸）**
-- 気温とアイス売上の関係は？
-- 単価と数量の相関を見せて
-
-**🥧 円グラフ（割合）**
-- 地域別売上の割合を見たい
-- 商品ごとのシェアを教えて
-""")
 
 if uploaded_file:
     if uploaded_file.name.endswith(".csv"):
@@ -53,6 +31,15 @@ if uploaded_file:
 
     duck_conn = duckdb.connect()
     duck_conn.register("data", df)
+
+    # ✅ サンプル質問（追加のみ、他は変更なし）
+    with st.expander("💡 サンプル質問（各種グラフ対応）", expanded=False):
+        st.markdown("""
+- **棒グラフ** → 「カテゴリごとの売上を棒グラフで表示して」
+- **折れ線グラフ（時系列）** → 「月別の売上推移を教えて」
+- **円グラフ** → 「地域ごとの売上割合を円グラフで見せて」
+- **散布図** → 「気温とアイスの売上の関係を散布図で見せて」
+        """)
 
     user_input = st.chat_input("自然言語で質問してください")
 
@@ -107,6 +94,7 @@ DuckDBでは文字列を日付関数に使う場合、必ず `CAST(列 AS DATE)`
                     if result_df.shape[1] >= 2:
                         x, y = result_df.columns[0], result_df.columns[1]
 
+                        # グラフ種推定
                         q = user_input.lower()
                         if any(w in q for w in ["割合", "比率", "シェア", "円"]):
                             chart_type = "pie"
@@ -117,11 +105,13 @@ DuckDBでは文字列を日付関数に使う場合、必ず `CAST(列 AS DATE)`
                         else:
                             chart_type = "bar"
 
+                        # xをdatetimeに変換（折れ線向け）
                         try:
                             result_df[x] = pd.to_datetime(result_df[x])
                         except:
                             pass
 
+                        # 🔧 散布図は数値に強制変換
                         if chart_type == "scatter":
                             try:
                                 result_df[x] = pd.to_numeric(result_df[x])
@@ -129,6 +119,7 @@ DuckDBでは文字列を日付関数に使う場合、必ず `CAST(列 AS DATE)`
                             except:
                                 pass
 
+                        # グラフ描画
                         if chart_type == "pie":
                             fig = px.pie(result_df, names=x, values=y)
                             st.plotly_chart(fig, use_container_width=True)
