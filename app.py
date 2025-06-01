@@ -9,7 +9,7 @@ from openai import OpenAI
 import base64
 
 st.set_page_config(page_title="Vizzy", layout="wide")
-st.title("🧙‍♀️Vizzy")
+st.title("🧞Vizzy")
 # 画像をタイトルの下に追加する関数
 def load_image(image_path):
     with open(image_path, "rb") as img_file:
@@ -26,7 +26,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 # ✅ 説明トグル（タイトル直下）
-with st.expander("ℹ️ Vizzyとは？", expanded=False):
+with st.expander("Vizzyとは❔", expanded=False):
     st.markdown("""
 **Vizzy** は、`visualize`（可視化）と `easy`（かんたん）を掛け合わせた、  
 自然な日本語でデータに質問できるビジュアル生成アプリです。 
