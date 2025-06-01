@@ -21,10 +21,19 @@ openai_api_key = st.sidebar.text_input("🔑 OpenAI API Key", type="password")
 uploaded_file = st.file_uploader("📄 CSVまたはParquetファイルをアップロード", type=["csv", "parquet"])
 
 if uploaded_file:
+    # データ読み込み
     if uploaded_file.name.endswith(".csv"):
         df = pd.read_csv(uploaded_file)
     else:
         df = pd.read_parquet(uploaded_file)
+
+    # ✅ 日付らしき列を datetime に変換（前処理）
+    for col in df.columns:
+        if "date" in col.lower() or "time" in col.lower():
+            try:
+                df[col] = pd.to_datetime(df[col])
+            except:
+                pass
 
     st.success("✅ データを読み込みました！")
     st.dataframe(df.head())
@@ -54,19 +63,27 @@ if uploaded_file:
 
                 client = OpenAI(api_key=openai_api_key)
 
+                # スキーマ情報
                 schema_desc = "\n".join([f"{col} ({dtype})" for col, dtype in zip(df.columns, df.dtypes)])
 
+                # 💡 GPTへのプロンプトにCASTの指示を追加
                 prompt = f"""
-あなたはデータ分析用のAIアシスタントです。
-次のスキーマを持つテーブル `data` に対して、自然言語の質問に対応する **DuckDB形式のSQLクエリ** を出力してください。
+あなたはデータ分析アシスタントです。
 
-スキーマ:
+以下のスキーマに基づいて、自然言語の質問に対応する **DuckDB対応のSQLクエリ** を生成してください。
+
+テーブル名は常に `data` です。
+
+### スキーマ:
 {schema_desc}
 
-質問:
-{user_input}
+### 注意点:
+- `strftime()`や`format_date()`関数を使う場合、文字列型の列は **必ず `CAST(列名 AS DATE)`** に変換してください。
+- DuckDBでは文字列型のままでは日付関数を使えません。
+- SQL文のみを返してください（コードブロックや説明は不要です）。
 
-SQL文だけを、コードブロックや装飾なしで返してください。
+### 質問:
+{user_input}
 """
 
                 try:
