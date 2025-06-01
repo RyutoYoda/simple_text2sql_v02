@@ -3,7 +3,7 @@ import pandas as pd
 import duckdb
 import plotly.express as px
 from openai import OpenAI
-
+import re
 # -------------------------
 # ページ設定
 # -------------------------
@@ -97,7 +97,7 @@ if uploaded_file:
                     )
 
                     raw_sql = response.choices[0].message.content.strip()
-                    sql = raw_sql.strip("`").replace("```sql", "").replace("```", "").strip()
+                    sql = re.sub(r"```sql|```", "", raw_sql).strip()
 
                     st.markdown(f"🧠 **生成されたSQL:**\n```sql\n{sql}\n```")
 
