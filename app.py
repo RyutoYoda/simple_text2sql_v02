@@ -10,8 +10,8 @@ from openai import OpenAI
 st.set_page_config(page_title="🧠 Chat2SQL", layout="wide")
 st.title("🧠 Chat2SQL")
 
-# ✅ 環境変数からAPIキーを取得
-openai_api_key = os.environ.get("OPENAI_API_KEY")
+openai_api_key = st.secrets.get("OPENAI_API_KEY")
+
 if not openai_api_key:
     st.warning("⚠️ OPENAI_API_KEY が環境変数に設定されていません。")
 
