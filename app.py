@@ -4,16 +4,12 @@ import duckdb
 import plotly.express as px
 import numpy as np
 import re
-import os
 from openai import OpenAI
 
 st.set_page_config(page_title="🧠 Chat2SQL", layout="wide")
 st.title("🧠 Chat2SQL")
 
-openai_api_key = os.environ.get("OPENAI_API_KEY")
-
-if not openai_api_key:
-    st.warning("⚠️ 環境変数 'OPENAI_API_KEY' が設定されていません。APIが動作しません。")
+openai_api_key = st.sidebar.text_input("🔑 OpenAI API Key", type="password")
 
 uploaded_file = st.file_uploader("📄 CSVまたはParquetファイルをアップロード", type=["csv", "parquet"])
 
@@ -36,7 +32,7 @@ if uploaded_file:
     duck_conn = duckdb.connect()
     duck_conn.register("data", df)
 
-    # ✅ サンプル質問（変更禁止・固定）
+    # ✅ サンプル質問（追加のみ、他は変更なし）
     with st.expander("💡 サンプル質問（各種グラフ対応）", expanded=False):
         st.markdown("""
 - **棒グラフ** → 「カテゴリごとの売上を棒グラフで表示して」
@@ -109,11 +105,13 @@ DuckDBでは文字列を日付関数に使う場合、必ず `CAST(列 AS DATE)`
                         else:
                             chart_type = "bar"
 
+                        # xをdatetimeに変換（折れ線向け）
                         try:
                             result_df[x] = pd.to_datetime(result_df[x])
                         except:
                             pass
 
+                        # 🔧 散布図は数値に強制変換
                         if chart_type == "scatter":
                             try:
                                 result_df[x] = pd.to_numeric(result_df[x])
