@@ -80,7 +80,7 @@ if uploaded_file:
             st.markdown(user_input)
 
         with st.chat_message("assistant"):
-            with st.spinner("GPTがSQLを生成中..."):
+            with st.spinner("分析中..."):
                 client = OpenAI(api_key=openai_api_key)
 
                 # テーブルスキーマ抽出
