@@ -89,9 +89,9 @@ DuckDBでは文字列を日付関数に使う場合、必ず `CAST(列 AS DATE)`
 
                         # グラフ種推定
                         q = user_input.lower()
-                        if any(w in q for w in ["割合", "比率", "シェア"]):
+                        if any(w in q for w in ["割合", "比率", "シェア","円"]):
                             chart_type = "pie"
-                        elif any(w in q for w in ["相関", "関係", "関連"]):
+                        elif any(w in q for w in ["相関", "関係", "関連","散布図"]):
                             chart_type = "scatter"
                         elif any(w in q for w in ["時間", "日時", "推移", "傾向", "月", "日", "時系列"]):
                             chart_type = "line"
