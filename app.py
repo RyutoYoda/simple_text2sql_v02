@@ -1,111 +1,100 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-import requests
 import plotly.express as px
-import os
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
-# -------------------------------
-# アプリ設定
-# -------------------------------
-st.set_page_config(page_title="自然言語データチャット", layout="wide")
-st.title("📊 自然言語でグラフ生成チャット")
-st.markdown("CSV または Parquet ファイルをアップロードして、自然言語で質問してみましょう。")
+# ---------------------
+# モデル読み込み（初回だけ）
+# ---------------------
+@st.cache_resource
+def load_model():
+    tokenizer = AutoTokenizer.from_pretrained("cyberagent/calm3-22b-chat")
+    model = AutoModelForCausalLM.from_pretrained(
+        "cyberagent/calm3-22b-chat",
+        device_map="auto",
+        torch_dtype=torch.float16  # もしくは "auto"
+    )
+    return model, tokenizer
 
-# -------------------------------
-# Hugging Face APIキー入力
-# -------------------------------
-hf_token = st.sidebar.text_input("🔑 Hugging Face Token", type="password", help="https://huggingface.co/settings/tokens から取得")
+st.title("💬 Text2SQL チャット × CALM3")
+st.markdown("自然言語で質問すると、SQLを生成してグラフ化します。")
 
-# -------------------------------
-# データアップロード
-# -------------------------------
-uploaded_file = st.file_uploader("データファイルをアップロード (CSV or Parquet)", type=["csv", "parquet"])
+model, tokenizer = load_model()
+
+# ---------------------
+# データ読み込み
+# ---------------------
+uploaded_file = st.file_uploader("📄 CSVまたはParquetファイルをアップロード", type=["csv", "parquet"])
+
 if uploaded_file:
     if uploaded_file.name.endswith(".csv"):
         df = pd.read_csv(uploaded_file)
     else:
         df = pd.read_parquet(uploaded_file)
-
-    st.success("✅ データを読み込みました。")
+    st.success("✅ データ読み込み成功！")
     st.dataframe(df.head())
 
-    # DBに投入
     conn = sqlite3.connect(":memory:")
     df.to_sql("data", conn, index=False, if_exists="replace")
 
-    # チャット履歴用セッション
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = []
+    # ---------------------
+    # チャット入力
+    # ---------------------
+    user_input = st.chat_input("自然言語でデータに質問してみよう（例：月別の売上合計）")
 
-    # サンプル質問ボタン
-    with st.expander("💡 サンプル質問", expanded=False):
-        st.markdown("""
-        - 月ごとの売上合計をグラフで見せて
-        - 商品カテゴリごとの販売数を棒グラフで
-        - 売上の平均値を教えて
-        - 一番売れた商品は？
-        """)
-
-    # 入力欄
-    user_input = st.chat_input("質問を入力してください（例：月ごとの売上を見せて）")
-
-    if user_input and hf_token:
-        # 履歴に追加
-        st.session_state.chat_history.append({"role": "user", "content": user_input})
-
+    if user_input:
         with st.chat_message("user"):
             st.markdown(user_input)
 
         with st.chat_message("assistant"):
-            with st.spinner("AIが考え中..."):
+            with st.spinner("SQLを生成中..."):
 
-                # モデルに問い合わせ
-                table_info = df.head(5).to_string()
-                prompt = f"""### SQLite SQL tables, with their properties:
-#
-# {table_info}
-#
-### A query to answer: {user_input}
-SELECT"""
+                # テーブル情報
+                table_info = "\n".join([f"{col}: {str(dtype)}" for col, dtype in zip(df.columns, df.dtypes)])
 
-                headers = {
-                    "Authorization": f"Bearer {hf_token}"
-                }
+                # プロンプト生成
+                prompt = f"""あなたはデータアナリストです。
+以下のテーブル構造に対して、質問に答えるSQLiteクエリを出力してください。
 
-                payload = {
-                    "inputs": prompt,
-                    "parameters": {"max_new_tokens": 128}
-                }
+テーブル情報:
+{table_info}
 
-                response = requests.post(
-                    "https://api-inference.huggingface.co/models/Snowflake/Arctic-Text2SQL-R1-7B",
-                    headers=headers,
-                    json=payload
-                )
+質問:
+{user_input}
 
-                if response.status_code == 200:
-                    output = response.json()
-                    generated_sql = "SELECT" + output[0]["generated_text"]
+SQL:"""
 
-                    st.markdown(f"🧠 **生成されたSQL:**\n```sql\n{generated_sql}\n```")
+                # 入力トークン作成
+                messages = [
+                    {"role": "system", "content": "あなたはSQLクエリを生成するアシスタントです。"},
+                    {"role": "user", "content": prompt}
+                ]
+                input_ids = tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt").to(model.device)
 
-                    try:
-                        result_df = pd.read_sql_query(generated_sql, conn)
-                        st.dataframe(result_df)
+                # モデル推論
+                output_ids = model.generate(input_ids, max_new_tokens=256, temperature=0.3)
+                response = tokenizer.decode(output_ids[0], skip_special_tokens=True)
 
-                        # グラフ生成（2列だけなら）
-                        if result_df.shape[1] == 2:
-                            fig = px.bar(result_df, x=result_df.columns[0], y=result_df.columns[1])
-                            st.plotly_chart(fig, use_container_width=True)
-                        else:
-                            st.info("グラフ化には2列の結果が必要です。")
+                # SQL抽出
+                sql_start = response.find("SELECT")
+                sql_query = response[sql_start:] if sql_start >= 0 else response
 
-                    except Exception as e:
-                        st.error(f"❌ SQL実行エラー: {e}")
-                else:
-                    st.error("モデル呼び出し失敗。トークンやAPIステータスを確認してください。")
+                st.markdown(f"🧠 **生成されたSQLクエリ**:\n```sql\n{sql_query}\n```")
 
+                # SQL実行
+                try:
+                    result_df = pd.read_sql_query(sql_query, conn)
+                    st.dataframe(result_df)
+
+                    # グラフ表示（2列）
+                    if result_df.shape[1] == 2:
+                        fig = px.bar(result_df, x=result_df.columns[0], y=result_df.columns[1])
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.info("2列の結果のみグラフ化されます。")
+                except Exception as e:
+                    st.error(f"❌ SQL実行エラー: {e}")
 else:
-    st.info("まずはデータファイルをアップロードしてください。")
-
+    st.info("まずはCSVまたはParquetをアップロードしてください。")
