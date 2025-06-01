@@ -154,7 +154,7 @@ DuckDBでは文字列を日付関数に使う場合、必ず `CAST(列 AS DATE)`
                                 # ✅ 相関係数表示
                                 try:
                                     corr = np.corrcoef(result_df[x], result_df[y])[0, 1]
-                                    st.success(f"📊 **相関係数**（{x} vs {y}）: `{corr:.3f}`")
+                                    st.success(f"📊 **相関係数**: `{corr:.3f}`")
                                 except:
                                     st.warning("⚠️ 相関係数の計算に失敗しました。")
                             else:
