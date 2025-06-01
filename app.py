@@ -79,7 +79,7 @@ SQL文だけ返してください。
 
                         # グラフ種自動判定
                         q = user_input.lower()
-                        if any(w in q for w in ["割合", "比率", "シェア"]):
+                        if any(w in q for w in ["割合", "比率", "シェア","円"]):
                             chart_type = "pie"
                         elif any(w in q for w in ["相関", "関係", "関連"]):
                             chart_type = "scatter"
