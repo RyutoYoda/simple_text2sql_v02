@@ -4,4 +4,3 @@ plotly
 duckdb
 openai>=1.0.0
 numpy
-statsmodels
