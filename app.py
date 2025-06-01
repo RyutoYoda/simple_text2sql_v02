@@ -2,30 +2,16 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import plotly.express as px
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+import openai
+import os
 
-# ---------------------
-# モデル読み込み（初回だけ）
-# ---------------------
-@st.cache_resource
-def load_model():
-    tokenizer = AutoTokenizer.from_pretrained("cyberagent/calm3-22b-chat")
-    model = AutoModelForCausalLM.from_pretrained(
-        "cyberagent/calm3-22b-chat",
-        device_map="auto",
-        torch_dtype=torch.float16  # もしくは "auto"
-    )
-    return model, tokenizer
+st.set_page_config(page_title="🧠 Chat2SQL with OpenAI", layout="wide")
+st.title("🧠 text2SQL_ver1")
 
-st.title("💬 Text2SQL チャット × CALM3")
-st.markdown("自然言語で質問すると、SQLを生成してグラフ化します。")
+# --- OpenAI APIキー入力 ---
+openai_api_key = st.sidebar.text_input("🔑 OpenAI API Key", type="password")
 
-model, tokenizer = load_model()
-
-# ---------------------
-# データ読み込み
-# ---------------------
+# --- データ読み込み ---
 uploaded_file = st.file_uploader("📄 CSVまたはParquetファイルをアップロード", type=["csv", "parquet"])
 
 if uploaded_file:
@@ -33,68 +19,67 @@ if uploaded_file:
         df = pd.read_csv(uploaded_file)
     else:
         df = pd.read_parquet(uploaded_file)
-    st.success("✅ データ読み込み成功！")
+
+    st.success("✅ データを読み込みました！")
     st.dataframe(df.head())
 
     conn = sqlite3.connect(":memory:")
     df.to_sql("data", conn, index=False, if_exists="replace")
 
-    # ---------------------
-    # チャット入力
-    # ---------------------
-    user_input = st.chat_input("自然言語でデータに質問してみよう（例：月別の売上合計）")
+    # --- ユーザーの自然言語入力 ---
+    user_input = st.chat_input("データに関する質問を入力してください")
 
-    if user_input:
+    if user_input and openai_api_key:
         with st.chat_message("user"):
             st.markdown(user_input)
 
         with st.chat_message("assistant"):
             with st.spinner("SQLを生成中..."):
 
-                # テーブル情報
-                table_info = "\n".join([f"{col}: {str(dtype)}" for col, dtype in zip(df.columns, df.dtypes)])
+                openai.api_key = openai_api_key
 
-                # プロンプト生成
-                prompt = f"""あなたはデータアナリストです。
-以下のテーブル構造に対して、質問に答えるSQLiteクエリを出力してください。
+                schema_desc = "\n".join([f"{col} ({dtype})" for col, dtype in zip(df.columns, df.dtypes)])
 
-テーブル情報:
-{table_info}
+                prompt = f"""
+あなたはSQLデータベースのアシスタントです。
+次のテーブルに基づいて、SQLite形式で適切なSQLクエリを生成してください。
+
+スキーマ:
+{schema_desc}
 
 質問:
 {user_input}
 
-SQL:"""
+SQLクエリだけを返してください。
+"""
 
-                # 入力トークン作成
-                messages = [
-                    {"role": "system", "content": "あなたはSQLクエリを生成するアシスタントです。"},
-                    {"role": "user", "content": prompt}
-                ]
-                input_ids = tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt").to(model.device)
-
-                # モデル推論
-                output_ids = model.generate(input_ids, max_new_tokens=256, temperature=0.3)
-                response = tokenizer.decode(output_ids[0], skip_special_tokens=True)
-
-                # SQL抽出
-                sql_start = response.find("SELECT")
-                sql_query = response[sql_start:] if sql_start >= 0 else response
-
-                st.markdown(f"🧠 **生成されたSQLクエリ**:\n```sql\n{sql_query}\n```")
-
-                # SQL実行
                 try:
-                    result_df = pd.read_sql_query(sql_query, conn)
-                    st.dataframe(result_df)
+                    response = openai.ChatCompletion.create(
+                        model="gpt-4o",  # gpt-3.5-turbo でも可
+                        messages=[
+                            {"role": "system", "content": "あなたはSQL専門家です。"},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.3
+                    )
 
-                    # グラフ表示（2列）
-                    if result_df.shape[1] == 2:
-                        fig = px.bar(result_df, x=result_df.columns[0], y=result_df.columns[1])
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.info("2列の結果のみグラフ化されます。")
+                    sql = response.choices[0].message.content.strip()
+                    st.markdown(f"🧠 **生成されたSQL:**\n```sql\n{sql}\n```")
+
+                    try:
+                        result_df = pd.read_sql_query(sql, conn)
+                        st.dataframe(result_df)
+
+                        if result_df.shape[1] == 2:
+                            fig = px.bar(result_df, x=result_df.columns[0], y=result_df.columns[1])
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.info("2列の結果のみグラフ化されます。")
+
+                    except Exception as e:
+                        st.error(f"❌ SQL実行時エラー: {e}")
+
                 except Exception as e:
-                    st.error(f"❌ SQL実行エラー: {e}")
+                    st.error(f"OpenAI API呼び出しに失敗しました: {e}")
 else:
-    st.info("まずはCSVまたはParquetをアップロードしてください。")
+    st.info("まずはCSVまたはParquetファイルをアップロードしてください。")
