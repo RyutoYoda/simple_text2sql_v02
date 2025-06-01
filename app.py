@@ -2,13 +2,15 @@ import streamlit as st
 import pandas as pd
 import duckdb
 import plotly.express as px
-from openai import OpenAI
 import re
+import numpy as np
+from openai import OpenAI
+
 # -------------------------
 # ページ設定
 # -------------------------
-st.set_page_config(page_title="🦆 Chat2SQL with DuckDB", layout="wide")
-st.title("🦆 Chat2SQL with DuckDB × GPT-3.5")
+st.set_page_config(page_title="🦆 Chat2SQL with Graph Auto", layout="wide")
+st.title("🦆 Chat2SQL × GPT-3.5 × DuckDB with Smart Charting")
 
 # -------------------------
 # OpenAI APIキー
@@ -50,6 +52,9 @@ if uploaded_file:
         - 地域別の販売数を棒グラフで見せて
         - 最も売れた商品は？
         - 購入金額が高い順に並べてください
+        - 地域ごとの売上割合は？
+        - 単価と数量の相関は？
+        - 月別の販売数推移を教えて
         """)
 
     user_input = st.chat_input("自然言語で質問してください")
@@ -63,24 +68,20 @@ if uploaded_file:
 
                 client = OpenAI(api_key=openai_api_key)
 
-                # スキーマ情報
                 schema_desc = "\n".join([f"{col} ({dtype})" for col, dtype in zip(df.columns, df.dtypes)])
 
-                # 💡 GPTへのプロンプトにCASTの指示を追加
                 prompt = f"""
 あなたはデータ分析アシスタントです。
 
-以下のスキーマに基づいて、自然言語の質問に対応する **DuckDB対応のSQLクエリ** を生成してください。
-
-テーブル名は常に `data` です。
+以下のスキーマを持つテーブル `data` に対して、自然言語の質問に対応する DuckDB形式のSQLクエリを生成してください。
 
 ### スキーマ:
 {schema_desc}
 
 ### 注意点:
-- `strftime()`や`format_date()`関数を使う場合、文字列型の列は **必ず `CAST(列名 AS DATE)`** に変換してください。
-- DuckDBでは文字列型のままでは日付関数を使えません。
-- SQL文のみを返してください（コードブロックや説明は不要です）。
+- 日付や時間列を使う場合は必ず `CAST(列名 AS DATE)` にしてください。
+- `strftime()`や`format_date()`を使うときもCASTが必要です。
+- SQL文のみをプレーンテキストで返してください。コードブロックや説明は不要です。
 
 ### 質問:
 {user_input}
@@ -105,9 +106,41 @@ if uploaded_file:
                         result_df = duck_conn.execute(sql).fetchdf()
                         st.dataframe(result_df)
 
+                        # 🔍 グラフタイプ自動選定
+                        query_lower = user_input.lower()
+                        if any(w in query_lower for w in ["割合", "比率", "シェア"]):
+                            chart_type = "pie"
+                        elif any(w in query_lower for w in ["相関", "関係", "関連"]):
+                            chart_type = "scatter"
+                        elif any(w in query_lower for w in ["時間", "日時", "推移", "傾向"]):
+                            chart_type = "line"
+                        else:
+                            chart_type = "bar"
+
+                        # ✅ 2列のときのみグラフ表示
                         if result_df.shape[1] == 2:
-                            fig = px.bar(result_df, x=result_df.columns[0], y=result_df.columns[1])
+                            x, y = result_df.columns[0], result_df.columns[1]
+
+                            if chart_type == "bar":
+                                fig = px.bar(result_df, x=x, y=y)
+                            elif chart_type == "line":
+                                fig = px.line(result_df, x=x, y=y)
+                            elif chart_type == "scatter":
+                                fig = px.scatter(result_df, x=x, y=y, trendline="ols")
+                            elif chart_type == "pie":
+                                fig = px.pie(result_df, names=x, values=y)
+                            else:
+                                fig = px.bar(result_df, x=x, y=y)
+
                             st.plotly_chart(fig, use_container_width=True)
+
+                            # 📈 相関係数の表示（scatterのとき）
+                            if chart_type == "scatter":
+                                try:
+                                    corr = np.corrcoef(result_df[x], result_df[y])[0, 1]
+                                    st.markdown(f"📊 **相関係数**: `{corr:.3f}`")
+                                except:
+                                    st.info("相関係数の計算に失敗しました。")
                         else:
                             st.info("2列の結果のみグラフ化されます。")
 
