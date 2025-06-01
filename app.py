@@ -6,21 +6,19 @@ import numpy as np
 import re
 from openai import OpenAI
 
-st.set_page_config(page_title="🧠 Chat2SQL 最終完成版", layout="wide")
-st.title("🧠 Chat2SQL × GPT-3.5 × DuckDB（最終・柔軟・完成版）")
+st.set_page_config(page_title="🧠 Chat2SQL", layout="wide")
+st.title("🧠 Chat2SQL")
 
 openai_api_key = st.sidebar.text_input("🔑 OpenAI API Key", type="password")
 
 uploaded_file = st.file_uploader("📄 CSVまたはParquetファイルをアップロード", type=["csv", "parquet"])
 
 if uploaded_file:
-    # データ読み込み
     if uploaded_file.name.endswith(".csv"):
         df = pd.read_csv(uploaded_file)
     else:
         df = pd.read_parquet(uploaded_file)
 
-    # 日付らしき列をdatetimeに変換
     for col in df.columns:
         if "date" in col.lower() or "time" in col.lower():
             try:
@@ -54,7 +52,7 @@ if uploaded_file:
 
 DuckDBでは文字列を日付関数に使う場合、必ず `CAST(列 AS DATE)` を使用してください。
 
-❗️重要：
+重要：
 「関係」「相関」「関連」などの質問では、`SELECT CORR(...)` のような1列の相関係数ではなく、
 `SELECT col1, col2 FROM data` のように、2列の数値データを含む結果を返してください（散布図描画のため）。
 
@@ -89,20 +87,30 @@ DuckDBでは文字列を日付関数に使う場合、必ず `CAST(列 AS DATE)`
 
                         # グラフ種推定
                         q = user_input.lower()
-                        if any(w in q for w in ["割合", "比率", "シェア","円"]):
+                        if any(w in q for w in ["割合", "比率", "シェア"]):
                             chart_type = "pie"
-                        elif any(w in q for w in ["相関", "関係", "関連","散布図"]):
+                        elif any(w in q for w in ["相関", "関係", "関連"]):
                             chart_type = "scatter"
                         elif any(w in q for w in ["時間", "日時", "推移", "傾向", "月", "日", "時系列"]):
                             chart_type = "line"
                         else:
                             chart_type = "bar"
 
+                        # x軸をdatetimeに変換試行
                         try:
                             result_df[x] = pd.to_datetime(result_df[x])
                         except:
                             pass
 
+                        # 🔧 散布図のために数値変換を試行
+                        if chart_type == "scatter":
+                            try:
+                                result_df[x] = pd.to_numeric(result_df[x])
+                                result_df[y] = pd.to_numeric(result_df[y])
+                            except:
+                                pass
+
+                        # グラフ描画
                         if chart_type == "pie":
                             fig = px.pie(result_df, names=x, values=y)
                             st.plotly_chart(fig, use_container_width=True)
@@ -112,13 +120,13 @@ DuckDBでは文字列を日付関数に使う場合、必ず `CAST(列 AS DATE)`
                                 fig = px.scatter(result_df, x=x, y=y)
                                 st.plotly_chart(fig, use_container_width=True)
                             else:
-                                st.warning("⚠️ 散布図は数値列同士にのみ対応しています。")
+                                st.warning("⚠️ 散布図は数値列同士にのみ対応しています。列が文字列型のままかも？")
 
                         elif chart_type == "line":
                             fig = px.line(result_df, x=x, y=y)
                             st.plotly_chart(fig, use_container_width=True)
 
-                        else:  # bar
+                        else:
                             fig = px.bar(result_df, x=x, y=y)
                             st.plotly_chart(fig, use_container_width=True)
                     else:
