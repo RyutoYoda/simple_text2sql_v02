@@ -7,8 +7,18 @@ import re
 import os
 from openai import OpenAI
 
-st.set_page_config(page_title="🧠 Chat2SQL", layout="wide")
-st.title("🧠 Chat2SQL")
+# ✅ アプリ名とページ設定
+st.set_page_config(page_title="Vizzy", layout="wide")
+st.title("📊 Vizzy")
+
+# ✅ 説明トグル（タイトル直下）
+with st.expander("ℹ️ Vizzyとは？", expanded=False):
+    st.markdown("""
+**Vizzy** は、`visualize`（可視化）と `easy`（かんたん）を掛け合わせた、  
+自然な日本語でデータに質問できるビジュアル生成アプリです。 
+CSVやParquetファイルをアップロードし、例えば「時間帯ごとの売上を見せて」などと聞くだけで、  
+グラフを自動表示してくれます。
+""")
 
 openai_api_key = st.secrets.get("OPENAI_API_KEY")
 
