@@ -13,19 +13,22 @@ openai_api_key = st.sidebar.text_input("🔑 OpenAI API Key", type="password")
 
 uploaded_file = st.file_uploader("📄 CSVまたはParquetファイルをアップロード", type=["csv", "parquet"])
 
-# 🔍 グラフ用の列選定関数
+# 🔍 グラフ用の列選定関数（柔軟化）
 def choose_chart_columns(df, chart_type):
     numeric_cols = df.select_dtypes(include="number").columns.tolist()
     datetime_cols = df.select_dtypes(include=["datetime", "datetimetz"]).columns.tolist()
     object_cols = df.select_dtypes(include="object").columns.tolist()
 
-    if chart_type == "line" and datetime_cols and numeric_cols:
-        return datetime_cols[0], numeric_cols[0]
+    # 柔軟に日付列として object も許容
+    time_cols = datetime_cols or object_cols
+
+    if chart_type == "line" and time_cols and numeric_cols:
+        return time_cols[0], numeric_cols[0]
     if chart_type == "scatter" and len(numeric_cols) >= 2:
         return numeric_cols[0], numeric_cols[1]
     if chart_type == "pie" and object_cols and numeric_cols:
         return object_cols[0], numeric_cols[0]
-    if len(object_cols) >= 1 and len(numeric_cols) >= 1:
+    if object_cols and numeric_cols:
         return object_cols[0], numeric_cols[0]
     elif len(numeric_cols) >= 2:
         return numeric_cols[0], numeric_cols[1]
@@ -37,7 +40,7 @@ if uploaded_file:
     else:
         df = pd.read_parquet(uploaded_file)
 
-    # ⏰ 日付列を自動変換
+    # ⏰ 日付らしき列を自動変換
     for col in df.columns:
         if "date" in col.lower() or "time" in col.lower():
             try:
@@ -76,7 +79,7 @@ if uploaded_file:
 
                 prompt = f"""
 あなたはデータ分析アシスタントです。
-次のスキーマのテーブル `data` に対して、質問に対応する DuckDB形式のSQLを生成してください。
+以下のスキーマのテーブル `data` に対して、質問に対応する DuckDB形式のSQLを生成してください。
 
 スキーマ:
 {schema_desc}
@@ -106,7 +109,7 @@ if uploaded_file:
                     result_df = duck_conn.execute(sql).fetchdf()
                     st.dataframe(result_df)
 
-                    # 🔍 グラフ種判定
+                    # グラフ種の自動推定
                     q = user_input.lower()
                     if any(w in q for w in ["割合", "比率", "シェア"]):
                         chart_type = "pie"
@@ -120,6 +123,13 @@ if uploaded_file:
                     x, y = choose_chart_columns(result_df, chart_type)
 
                     if x and y:
+                        # x軸が日付っぽければ datetime にしておく（並び安定）
+                        try:
+                            result_df[x] = pd.to_datetime(result_df[x])
+                        except:
+                            pass
+
+                        # グラフ描画
                         if chart_type == "bar":
                             fig = px.bar(result_df, x=x, y=y)
                         elif chart_type == "line":
@@ -133,7 +143,7 @@ if uploaded_file:
 
                         st.plotly_chart(fig, use_container_width=True)
 
-                        # 相関係数（scatter時）
+                        # 相関係数（scatterのとき）
                         if chart_type == "scatter":
                             try:
                                 corr = np.corrcoef(result_df[x], result_df[y])[0, 1]
@@ -141,7 +151,7 @@ if uploaded_file:
                             except:
                                 st.info("相関係数の計算に失敗しました。")
                     else:
-                        st.info("自動的にグラフに使える列が見つかりませんでした。")
+                        st.info("📉 自動的にグラフ化できる列が見つかりませんでした。")
 
                 except Exception as e:
                     st.error(f"❌ エラー: {e}")
