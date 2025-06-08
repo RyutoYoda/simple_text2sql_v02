@@ -4,3 +4,6 @@ plotly
 duckdb
 openai>=1.0.0
 numpy
+
+gspread 
+google-cloud-bigquery
