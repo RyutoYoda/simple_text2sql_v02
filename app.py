@@ -198,11 +198,26 @@ DuckDBでは文字列を日付関数に使う場合、必ず `CAST(列 AS DATE)`
                             fig = px.bar(result_df, x=x, y=y)
 
                         st.plotly_chart(fig, use_container_width=True)
+
+                        # ✅ 要約プロンプトの追加（インデント調整済み）
+                        summary_prompt = f"""
+                        以下のデータの傾向や注目ポイントを日本語で要約してください（1〜2行）:
+
+                        {result_df.head(10).to_csv(index=False)}
+                        """
+                        summary_response = client.chat.completions.create(
+                            model="gpt-3.5-turbo",
+                            messages=[
+                                {"role": "system", "content": "あなたはデータから傾向を読み取るアナリストです。"},
+                                {"role": "user", "content": summary_prompt}
+                            ]
+                        )
+
+                        st.markdown(f"🧾 **要約:** {summary_response.choices[0].message.content.strip()}")
+
                     else:
                         st.info("📉 グラフ描画には2列以上の結果が必要です。")
 
                 except Exception as e:
                     st.error(f"❌ エラー: {e}")
 
-else:
-    st.info("まずはデータソースを選び、データを読み込んでください。")
