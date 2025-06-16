@@ -141,7 +141,6 @@ DuckDBでは文字列を日付関数に使う場合、必ず `CAST(列 AS DATE)`
 質問:
 {user_input}
 """
-
                 try:
                     response = client.chat.completions.create(
                         model="gpt-3.5-turbo",
@@ -199,21 +198,28 @@ DuckDBでは文字列を日付関数に使う場合、必ず `CAST(列 AS DATE)`
 
                         st.plotly_chart(fig, use_container_width=True)
 
-                        # ✅ 要約プロンプトの追加（インデント調整済み）
+                        # 🔍 AIによるグラフ要約
                         summary_prompt = f"""
-                        以下のデータの傾向や注目ポイントを日本語で要約してください（1〜2行）:
+以下のデータは「{chart_type}」グラフで可視化されたものです。
+ユーザーの質問「{user_input}」に対する結果です。
+この結果から読み取れるポイントを日本語で簡潔に3文以内で要約してください。
 
-                        {result_df.head(10).to_csv(index=False)}
-                        """
-                        summary_response = client.chat.completions.create(
-                            model="gpt-3.5-turbo",
-                            messages=[
-                                {"role": "system", "content": "あなたはデータから傾向を読み取るアナリストです。"},
-                                {"role": "user", "content": summary_prompt}
-                            ]
-                        )
+{result_df.head(20).to_csv(index=False)}
+"""
+                        try:
+                            summary_response = client.chat.completions.create(
+                                model="gpt-3.5-turbo",
+                                messages=[
+                                    {"role": "system", "content": "あなたはデータ可視化の専門家で、グラフから読み取れる内容をわかりやすく要約します。"},
+                                    {"role": "user", "content": summary_prompt}
+                                ]
+                            )
+                            summary_text = summary_response.choices[0].message.content.strip()
+                            st.markdown("📝 **グラフの要約:**")
+                            st.success(summary_text)
 
-                        st.markdown(f"🧾 **要約:** {summary_response.choices[0].message.content.strip()}")
+                        except Exception as e:
+                            st.warning(f"要約の生成に失敗しました: {e}")
 
                     else:
                         st.info("📉 グラフ描画には2列以上の結果が必要です。")
