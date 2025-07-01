@@ -127,19 +127,30 @@ if df is not None:
                 client = OpenAI(api_key=openai_api_key)
 
                 schema_desc = "\n".join([f"{col} ({dtype})" for col, dtype in zip(df.columns, df.dtypes)])
+                sample_data = df.head(3).to_string() 
                 prompt = f"""
 あなたはDuckDBに対してSQLを生成するアシスタントです。
-テーブル名は `data` です。
-ある程度曖昧な質問に対してもカラムを予測してSQLを発行してください
-DuckDBでは文字列を日付関数に使う場合、必ず `CAST(列 AS DATE)` を使用してください。
-「関係」「相関」「関連」などの質問では、`SELECT col1, col2 FROM data` のように2列の数値データを含む結果を返してください（散布図描画のため）。
-出力はSQL文のみ。コードブロックや装飾は不要です。
 
-スキーマ:
+基本ルール:
+- テーブル名は `data` です
+- ある程度曖昧な質問に対してもカラムを予測してSQLを発行してください
+- 出力はSQL文のみ。コードブロックや装飾は不要です
+
+重要な注意事項:
+1. **列名の正確性**: 列名は下記スキーマと完全に一致させてください（括弧や特殊文字も含めて正確に）
+2. **日付処理**: DuckDBでは文字列を日付関数に使う場合、必ず `CAST(列 AS DATE)` を使用してください
+   ただし、日付型でない列（文字列、数値など）に対してはCASTしないでください
+3. **相関・関係性分析**: 「関係」「相関」「関連」などの質問では、`SELECT col1, col2 FROM data` のように2列の数値データを含む結果を返してください（散布図描画のため）
+4. **データ型の確認**: 下記のデータ型情報とサンプルデータを参考に、適切な列を選択してください
+5. **文字列比較**: 文字列の比較では等号（=）やLIKEを使い、不適切なCASTは避けてください
+
+データスキーマ:
 {schema_desc}
 
-質問:
-{user_input}
+サンプルデータ（参考）:
+{sample_data}
+
+質問: {user_input}
 """
                 try:
                     response = client.chat.completions.create(
@@ -226,4 +237,17 @@ DuckDBでは文字列を日付関数に使う場合、必ず `CAST(列 AS DATE)`
 
                 except Exception as e:
                     st.error(f"❌ エラー: {e}")
-
+                    # エラーの種類に応じたヘルプを表示
+                    error_str = str(e)
+                    if "not found in FROM clause" in error_str:
+                        st.info("💡 **列名エラー**: 以下の列名を参考に、正確な列名で質問してください")
+                        col_list = "、".join([f"`{col}`" for col in df.columns])
+                        st.markdown(f"**利用可能な列**: {col_list}")
+                    elif "CAST" in error_str:
+                        st.info("💡 **データ型エラー**: 日付でない列を日付として処理しようとしています")
+                    else:
+                        st.info("💡 質問を少し変えて、もう一度お試しください")
+                    
+                    # 参考用にデータのサンプルを表示
+                    st.markdown("**データのサンプル（参考）:**")
+                    st.dataframe(df.head())
