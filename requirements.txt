@@ -8,3 +8,6 @@ numpy
 db-dtypes
 gspread 
 google-cloud-bigquery
+
+faiss-cpu
+scikit-learn
