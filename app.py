@@ -2,11 +2,17 @@ import streamlit as st
 import pandas as pd
 import duckdb
 import plotly.express as px
+import plotly.graph_objects as go
 import numpy as np
 import re
 import os
 import base64
 from openai import OpenAI
+import faiss
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+import warnings
+warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="Vizzye", layout="wide")
 st.title("🧞 Vizzy")
@@ -31,6 +37,12 @@ with st.expander("Vizzyとは❔", expanded=False):
     st.markdown("""
 **Vizzy** は、自然言語でデータに質問できるビジュアル生成アプリです。  
 CSV / Parquet / BigQuery / Googleスプレッドシートに対応しています。
+
+**新機能**: テキストデータのクラスタリング分析も可能です！
+- アンケートデータや自由記述テキストを自動でクラスタリング
+- 3次元散布図で可視化
+- 各クラスターの意見を自動要約
+- 少数派の意見も見逃しません
 """)
 
 # データソース選択
@@ -89,6 +101,135 @@ elif source == "Googleスプレッドシート":
         except Exception as e:
             st.error(f"スプレッドシートエラー: {e}")
 
+# テキストクラスタリング機能の関数定義
+def get_embeddings(texts, client):
+    """OpenAI APIを使ってテキストをベクトル化"""
+    embeddings = []
+    batch_size = 100  # APIレート制限を考慮
+    
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i+batch_size]
+        try:
+            response = client.embeddings.create(
+                model="text-embedding-ada-002",
+                input=batch
+            )
+            batch_embeddings = [item.embedding for item in response.data]
+            embeddings.extend(batch_embeddings)
+        except Exception as e:
+            st.error(f"埋め込み生成エラー (batch {i//batch_size + 1}): {e}")
+            return None
+    
+    return np.array(embeddings)
+
+def cluster_texts_with_faiss(embeddings, n_clusters=5):
+    """FAISSを使ってクラスタリング"""
+    # 次元数
+    d = embeddings.shape[1]
+    
+    # FAISSインデックスを作成（コサイン類似度用）
+    # L2正規化してからインナープロダクトを使うことでコサイン類似度を計算
+    faiss.normalize_L2(embeddings)
+    index = faiss.IndexFlatIP(d)
+    index.add(embeddings.astype(np.float32))
+    
+    # K-meansクラスタリング (scikit-learn使用、FAISSのk-meansは複雑なため)
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+    cluster_labels = kmeans.fit_predict(embeddings)
+    
+    return cluster_labels, kmeans.cluster_centers_
+
+def create_3d_visualization(embeddings, cluster_labels, texts, sample_size=1000):
+    """3次元散布図を作成"""
+    # データが多い場合はサンプリング
+    if len(embeddings) > sample_size:
+        indices = np.random.choice(len(embeddings), sample_size, replace=False)
+        embeddings_sample = embeddings[indices]
+        cluster_labels_sample = cluster_labels[indices]
+        texts_sample = [texts[i] for i in indices]
+    else:
+        embeddings_sample = embeddings
+        cluster_labels_sample = cluster_labels
+        texts_sample = texts
+    
+    # PCAで3次元に削減
+    pca = PCA(n_components=3)
+    embeddings_3d = pca.fit_transform(embeddings_sample)
+    
+    # プロットデータ準備
+    df_plot = pd.DataFrame({
+        'x': embeddings_3d[:, 0],
+        'y': embeddings_3d[:, 1],
+        'z': embeddings_3d[:, 2],
+        'cluster': cluster_labels_sample.astype(str),
+        'text': [text[:100] + "..." if len(text) > 100 else text for text in texts_sample]
+    })
+    
+    # 3D散布図作成
+    fig = px.scatter_3d(
+        df_plot, 
+        x='x', 
+        y='y', 
+        z='z',
+        color='cluster',
+        hover_data=['text'],
+        title="テキストデータのクラスタリング結果（3次元可視化）",
+        labels={'cluster': 'クラスター'}
+    )
+    
+    return fig, pca.explained_variance_ratio_
+
+def summarize_clusters(texts, cluster_labels, client):
+    """各クラスターの内容をGPTで要約"""
+    n_clusters = len(np.unique(cluster_labels))
+    summaries = []
+    
+    for cluster_id in range(n_clusters):
+        cluster_texts = [texts[i] for i in range(len(texts)) if cluster_labels[i] == cluster_id]
+        cluster_size = len(cluster_texts)
+        
+        # サンプルテキストを選択（最大20件）
+        sample_texts = cluster_texts[:20] if len(cluster_texts) > 20 else cluster_texts
+        
+        # GPTで要約
+        prompt = f"""
+以下は同じクラスターに分類されたテキストデータ（全{cluster_size}件中の代表{len(sample_texts)}件）です。
+このクラスターの共通した特徴や主要な意見・テーマを日本語で簡潔に要約してください。
+
+テキストデータ:
+{chr(10).join([f"- {text}" for text in sample_texts])}
+
+要約は以下の形式でお願いします：
+主なテーマ: [テーマ]
+特徴: [特徴の説明]
+代表的な意見: [意見の要約]
+"""
+        
+        try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "あなたはテキスト分析の専門家です。与えられたテキストデータの共通点を見つけて簡潔に要約してください。"},
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            summary = response.choices[0].message.content.strip()
+            summaries.append({
+                'cluster_id': cluster_id,
+                'size': cluster_size,
+                'percentage': round(cluster_size / len(texts) * 100, 1),
+                'summary': summary
+            })
+        except Exception as e:
+            summaries.append({
+                'cluster_id': cluster_id,
+                'size': cluster_size,
+                'percentage': round(cluster_size / len(texts) * 100, 1),
+                'summary': f"要約生成エラー: {e}"
+            })
+    
+    return summaries
+
 # 共通処理
 if df is not None:
     for col in df.columns:
@@ -101,6 +242,85 @@ if df is not None:
     st.success("✅ データを読み込みました")
     st.dataframe(df.head())
 
+    # テキスト列を検出
+    text_columns = []
+    for col in df.columns:
+        if df[col].dtype == 'object':  # 文字列型の列
+            # 平均文字数をチェック（ある程度長いテキストかどうか）
+            avg_length = df[col].dropna().astype(str).str.len().mean()
+            if avg_length > 10:  # 平均10文字以上をテキストデータとみなす
+                text_columns.append(col)
+
+    # テキストクラスタリング機能の表示
+    if text_columns:
+        st.markdown("---")
+        st.subheader("🔍 テキストデータのクラスタリング分析")
+        
+        with st.expander("💡 テキストクラスタリングとは", expanded=False):
+            st.markdown("""
+**テキストクラスタリング機能**では、アンケートの自由記述や意見データを自動で分析し、似たような内容をグループ化します。
+- 大量のテキストデータから主要な意見の傾向を把握
+- 少数派の意見も見逃さずに可視化
+- 各グループの特徴を自動で要約
+- 3次元散布図で直感的に理解
+            """)
+        
+        selected_text_col = st.selectbox("📝 分析するテキスト列を選択", text_columns)
+        n_clusters = st.slider("📊 クラスター数", min_value=2, max_value=10, value=5)
+        
+        if st.button("🚀 テキストクラスタリングを実行"):
+            openai_api_key = st.secrets.get("OPENAI_API_KEY") or st.text_input("🔑 OpenAI APIキーを入力", type="password")
+            
+            if openai_api_key and selected_text_col:
+                client = OpenAI(api_key=openai_api_key)
+                
+                # データの前処理
+                text_data = df[selected_text_col].dropna().astype(str).tolist()
+                text_data = [text for text in text_data if len(text.strip()) > 5]  # 短すぎるテキストを除去
+                
+                if len(text_data) < 10:
+                    st.warning("⚠️ 分析に十分なテキストデータがありません（最低10件必要）")
+                else:
+                    with st.spinner("テキストをベクトル化中..."):
+                        embeddings = get_embeddings(text_data, client)
+                    
+                    if embeddings is not None:
+                        with st.spinner("クラスタリング実行中..."):
+                            cluster_labels, cluster_centers = cluster_texts_with_faiss(embeddings, n_clusters)
+                        
+                        # 3次元可視化
+                        st.subheader("📈 3次元散布図での可視化")
+                        fig_3d, explained_variance = create_3d_visualization(embeddings, cluster_labels, text_data)
+                        st.plotly_chart(fig_3d, use_container_width=True)
+                        
+                        st.info(f"📊 主成分分析による寄与率: {explained_variance[0]:.1%}, {explained_variance[1]:.1%}, {explained_variance[2]:.1%}")
+                        
+                        # クラスター要約
+                        st.subheader("📝 各クラスターの要約")
+                        with st.spinner("各クラスターを分析中..."):
+                            summaries = summarize_clusters(text_data, cluster_labels, client)
+                        
+                        # 結果表示
+                        for summary in sorted(summaries, key=lambda x: x['size'], reverse=True):
+                            with st.expander(f"🏷️ クラスター {summary['cluster_id'] + 1} ({summary['size']}件, {summary['percentage']}%)", expanded=True):
+                                st.markdown(summary['summary'])
+                        
+                        # 統計情報
+                        st.subheader("📊 分析統計")
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            st.metric("分析対象テキスト数", len(text_data))
+                        
+                        with col2:
+                            st.metric("クラスター数", n_clusters)
+                        
+                        with col3:
+                            largest_cluster_size = max([s['size'] for s in summaries])
+                            smallest_cluster_size = min([s['size'] for s in summaries])
+                            st.metric("最大/最小クラスター", f"{largest_cluster_size}/{smallest_cluster_size}")
+
+    # 既存の機能（DuckDB処理）
     # DuckDB登録
     duck_conn = duckdb.connect()
     duck_conn.register("data", df)
