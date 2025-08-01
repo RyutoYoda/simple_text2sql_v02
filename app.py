@@ -124,18 +124,21 @@ def get_embeddings(texts, client):
 
 def cluster_texts_with_faiss(embeddings, n_clusters=5):
     """FAISSを使ってクラスタリング"""
+    # float32に変換（FAISSはfloat32を期待）
+    embeddings_f32 = embeddings.astype(np.float32).copy()
+    
     # 次元数
-    d = embeddings.shape[1]
+    d = embeddings_f32.shape[1]
     
     # FAISSインデックスを作成（コサイン類似度用）
     # L2正規化してからインナープロダクトを使うことでコサイン類似度を計算
-    faiss.normalize_L2(embeddings)
+    faiss.normalize_L2(embeddings_f32)
     index = faiss.IndexFlatIP(d)
-    index.add(embeddings.astype(np.float32))
+    index.add(embeddings_f32)
     
     # K-meansクラスタリング (scikit-learn使用、FAISSのk-meansは複雑なため)
     kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-    cluster_labels = kmeans.fit_predict(embeddings)
+    cluster_labels = kmeans.fit_predict(embeddings_f32)
     
     return cluster_labels, kmeans.cluster_centers_
 
