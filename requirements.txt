@@ -11,3 +11,7 @@ google-cloud-bigquery
 
 faiss-cpu
 scikit-learn
+
+snowflake-connector-python
+cryptography
+databricks-sql-connector
