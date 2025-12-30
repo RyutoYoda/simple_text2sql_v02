@@ -14,6 +14,13 @@ from sklearn.decomposition import PCA
 import warnings
 warnings.filterwarnings('ignore')
 
+# 新しいコネクタシステムのインポート（段階的移行用）
+try:
+    from src.infrastructure.connectors.factory import ConnectorFactory
+    USE_NEW_CONNECTORS = True
+except ImportError:
+    USE_NEW_CONNECTORS = False
+
 st.set_page_config(page_title="Vizzye", layout="wide")
 st.title("🧞 Vizzy")
 
@@ -46,7 +53,12 @@ CSV / Parquet / BigQuery / Googleスプレッドシートに対応していま�
 """)
 
 # データソース選択
-source = st.selectbox("📂 データソースを選択", ["ローカルファイル", "BigQuery", "Googleスプレッドシート"])
+if USE_NEW_CONNECTORS:
+    data_sources = ["ローカルファイル", "BigQuery", "Googleスプレッドシート", "Snowflake", "Databricks"]
+else:
+    data_sources = ["ローカルファイル", "BigQuery", "Googleスプレッドシート"]
+
+source = st.selectbox("📂 データソースを選択", data_sources)
 
 df = None
 
@@ -100,6 +112,104 @@ elif source == "Googleスプレッドシート":
                     df = pd.DataFrame(data)
         except Exception as e:
             st.error(f"スプレッドシートエラー: {e}")
+
+# Snowflake
+elif source == "Snowflake" and USE_NEW_CONNECTORS:
+    st.subheader("❄️ Snowflake接続設定")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        account = st.text_input("アカウント名", placeholder="xxx.snowflakecomputing.com")
+        username = st.text_input("ユーザー名")
+        warehouse = st.text_input("ウェアハウス名")
+    
+    with col2:
+        private_key_file = st.file_uploader("🔑 秘密鍵ファイル（PEM形式）", type=["pem", "key"])
+        passphrase = st.text_input("パスフレーズ（オプション）", type="password")
+    
+    if account and username and warehouse and private_key_file:
+        try:
+            private_key_content = private_key_file.read().decode('utf-8')
+            
+            connector = ConnectorFactory.create_connector("snowflake")
+            credentials = {
+                "account": account,
+                "user": username,
+                "private_key": private_key_content,
+                "private_key_passphrase": passphrase if passphrase else None,
+                "warehouse": warehouse
+            }
+            
+            with st.spinner("Snowflakeに接続中..."):
+                connector.connect(credentials)
+            
+            # データベース選択
+            databases = connector.list_datasets()
+            if databases:
+                selected_db = st.selectbox("データベース", databases)
+                
+                if selected_db:
+                    # テーブル選択
+                    tables = connector.list_tables(selected_db)
+                    if tables:
+                        selected_table = st.selectbox("テーブル", tables)
+                        
+                        if selected_table:
+                            with st.spinner(f"{selected_table}からデータを取得中..."):
+                                df = connector.get_sample_data(selected_db, selected_table)
+                                st.success(f"✅ {len(df)}行のデータを取得しました")
+            
+            connector.close()
+            
+        except Exception as e:
+            st.error(f"Snowflakeエラー: {e}")
+
+# Databricks
+elif source == "Databricks" and USE_NEW_CONNECTORS:
+    st.subheader("🧱 Databricks接続設定")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        server_hostname = st.text_input("サーバーホスト名", placeholder="xxx.cloud.databricks.com")
+        http_path = st.text_input("HTTPパス", placeholder="/sql/1.0/endpoints/xxx")
+    
+    with col2:
+        access_token = st.text_input("Personal Access Token", type="password")
+        catalog = st.text_input("カタログ（オプション）")
+    
+    if server_hostname and http_path and access_token:
+        try:
+            connector = ConnectorFactory.create_connector("databricks")
+            credentials = {
+                "server_hostname": server_hostname,
+                "http_path": http_path,
+                "access_token": access_token,
+                "catalog": catalog if catalog else None
+            }
+            
+            with st.spinner("Databricksに接続中..."):
+                connector.connect(credentials)
+            
+            # カタログ選択
+            catalogs = connector.list_datasets()
+            if catalogs:
+                selected_catalog = st.selectbox("カタログ", catalogs)
+                
+                if selected_catalog:
+                    # テーブル選択
+                    tables = connector.list_tables(selected_catalog)
+                    if tables:
+                        selected_table = st.selectbox("テーブル", tables)
+                        
+                        if selected_table:
+                            with st.spinner(f"{selected_table}からデータを取得中..."):
+                                df = connector.get_sample_data(selected_catalog, selected_table)
+                                st.success(f"✅ {len(df)}行のデータを取得しました")
+            
+            connector.close()
+            
+        except Exception as e:
+            st.error(f"Databricksエラー: {e}")
 
 # テキストクラスタリング機能の関数定義
 def get_embeddings(texts, client):
