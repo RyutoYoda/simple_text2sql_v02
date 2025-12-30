@@ -1,3 +1,8 @@
+import sys
+import os
+# 現在のディレクトリをPythonパスに追加
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 import streamlit as st
 import pandas as pd
 import duckdb
@@ -5,7 +10,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
 import re
-import os
 import base64
 from openai import OpenAI
 import faiss
@@ -18,8 +22,9 @@ warnings.filterwarnings('ignore')
 try:
     from src.infrastructure.connectors.factory import ConnectorFactory
     USE_NEW_CONNECTORS = True
-except ImportError:
+except ImportError as e:
     USE_NEW_CONNECTORS = False
+    print(f"Import error: {e}")  # デバッグ用
 
 st.set_page_config(page_title="Vizzye", layout="wide")
 st.title("🧞 Vizzy")
@@ -43,7 +48,7 @@ if os.path.exists(image_path):
 with st.expander("Vizzyとは❔", expanded=False):
     st.markdown("""
 **Vizzy** は、自然言語でデータに質問できるビジュアル生成アプリです。  
-CSV / Parquet / BigQuery / Googleスプレッドシートに対応しています。
+CSV / Parquet / BigQuery / Googleスプレッドシート / Snowflake / Databricksに対応しています。
 
 **新機能**: テキストデータのクラスタリング分析も可能です！
 - アンケートデータや自由記述テキストを自動でクラスタリング
@@ -52,45 +57,64 @@ CSV / Parquet / BigQuery / Googleスプレッドシートに対応していま�
 - 少数派の意見も見逃しません
 """)
 
-# データソース選択
-if USE_NEW_CONNECTORS:
-    data_sources = ["ローカルファイル", "BigQuery", "Googleスプレッドシート", "Snowflake", "Databricks"]
-else:
-    data_sources = ["ローカルファイル", "BigQuery", "Googleスプレッドシート"]
+# セッション状態の初期化
+if 'df' not in st.session_state:
+    st.session_state.df = None
+if 'connection_status' not in st.session_state:
+    st.session_state.connection_status = False
 
-source = st.selectbox("📂 データソースを選択", data_sources)
+# サイドバーでデータソース接続設定
+with st.sidebar:
+    st.header("📊 データソース設定")
+    
+    # データソース選択
+    if USE_NEW_CONNECTORS:
+        data_sources = ["ローカルファイル", "BigQuery", "Googleスプレッドシート", "Snowflake", "Databricks"]
+    else:
+        data_sources = ["ローカルファイル", "BigQuery", "Googleスプレッドシート"]
+    
+    source = st.selectbox("データソースを選択", data_sources)
+    
+    st.divider()
+    
+    # 接続設定とデータ取得を同じ場所に配置
+    df = None
+    
+    # ローカルファイル
+    if source == "ローカルファイル":
+        uploaded_file = st.file_uploader("📄 ファイルをアップロード", type=["csv", "parquet"])
+        if uploaded_file:
+            df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv") else pd.read_parquet(uploaded_file)
+            st.session_state.df = df
+            st.success("✅ データ読み込み完了")
 
-df = None
-
-# ローカルファイル
-if source == "ローカルファイル":
-    uploaded_file = st.file_uploader("📄 CSVまたはParquetファイルをアップロード", type=["csv", "parquet"])
-    if uploaded_file:
-        df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv") else pd.read_parquet(uploaded_file)
-
-# BigQuery
-elif source == "BigQuery":
-    sa_file = st.file_uploader("🔐 BigQueryサービスアカウントJSONをアップロード", type="json", key="bq")
-    if sa_file:
-        with open("temp_bq.json", "wb") as f:
-            f.write(sa_file.getbuffer())
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "temp_bq.json"
-
-        from google.cloud import bigquery
-        try:
-            client = bigquery.Client()
-            datasets = list(client.list_datasets())
-            dataset_names = [d.dataset_id for d in datasets]
-            selected_dataset = st.selectbox("データセット", dataset_names)
-            if selected_dataset:
-                tables = list(client.list_tables(selected_dataset))
-                table_names = [t.table_id for t in tables]
-                selected_table = st.selectbox("テーブル", table_names)
-                if selected_table:
-                    full_table_id = f"{client.project}.{selected_dataset}.{selected_table}"
-                    df = client.query(f"SELECT * FROM `{full_table_id}` LIMIT 1000").to_dataframe()
-        except Exception as e:
-            st.error(f"BigQueryエラー: {e}")
+    # BigQuery
+    elif source == "BigQuery":
+        sa_file = st.file_uploader("🔐 サービスアカウントJSON", type="json", key="bq")
+        if sa_file:
+            with open("temp_bq.json", "wb") as f:
+                f.write(sa_file.getbuffer())
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "temp_bq.json"
+            
+            from google.cloud import bigquery
+            try:
+                client = bigquery.Client()
+                datasets = list(client.list_datasets())
+                dataset_names = [d.dataset_id for d in datasets]
+                selected_dataset = st.selectbox("データセット", dataset_names)
+                if selected_dataset:
+                    tables = list(client.list_tables(selected_dataset))
+                    table_names = [t.table_id for t in tables]
+                    selected_table = st.selectbox("テーブル", table_names)
+                    if selected_table:
+                        if st.button("📥 データ取得", key="bq_fetch"):
+                            with st.spinner("データ取得中..."):
+                                full_table_id = f"{client.project}.{selected_dataset}.{selected_table}"
+                                df = client.query(f"SELECT * FROM `{full_table_id}` LIMIT 1000").to_dataframe()
+                                st.session_state.df = df
+                                st.success("✅ データ読み込み完了")
+            except Exception as e:
+                st.error(f"BigQueryエラー: {e}")
 
 # Googleスプレッドシート
 elif source == "Googleスプレッドシート":
