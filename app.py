@@ -1,6 +1,5 @@
 import sys
 import os
-# 現在のディレクトリをPythonパスに追加
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import streamlit as st
@@ -18,593 +17,388 @@ from sklearn.decomposition import PCA
 import warnings
 warnings.filterwarnings('ignore')
 
-# 新しいコネクタシステムのインポート（段階的移行用）
+# 新しいコネクタシステムのインポート
 try:
     from src.infrastructure.connectors.factory import ConnectorFactory
     USE_NEW_CONNECTORS = True
 except ImportError as e:
     USE_NEW_CONNECTORS = False
-    print(f"Import error: {e}")  # デバッグ用
+    st.error(f"新しいコネクタシステムが利用できません: {e}")
 
-st.set_page_config(page_title="Vizzye", layout="wide")
-st.title("🧞 Vizzy")
+st.set_page_config(page_title="Vizzye", layout="wide", initial_sidebar_state="expanded")
 
 # ロゴ画像表示
 def load_image(image_path):
     with open(image_path, "rb") as img_file:
         return base64.b64encode(img_file.read()).decode()
 
-image_path = "vizzy_logo.png"
-if os.path.exists(image_path):
-    image_base64 = load_image(image_path)
-    st.markdown(
-        f"""<div style="text-align: center;">
-        <img src="data:image/png;base64,{image_base64}" alt="image" style="width: 100%;"/>
-        </div>""",
-        unsafe_allow_html=True
-    )
-
-# 説明
-with st.expander("Vizzyとは❔", expanded=False):
-    st.markdown("""
-**Vizzy** は、自然言語でデータに質問できるビジュアル生成アプリです。  
-CSV / Parquet / BigQuery / Googleスプレッドシート / Snowflake / Databricksに対応しています。
-
-**新機能**: テキストデータのクラスタリング分析も可能です！
-- アンケートデータや自由記述テキストを自動でクラスタリング
-- 3次元散布図で可視化
-- 各クラスターの意見を自動要約
-- 少数派の意見も見逃しません
-""")
-
 # セッション状態の初期化
 if 'df' not in st.session_state:
     st.session_state.df = None
-if 'connection_status' not in st.session_state:
-    st.session_state.connection_status = False
+if 'connected' not in st.session_state:
+    st.session_state.connected = False
+if 'connector' not in st.session_state:
+    st.session_state.connector = None
 
-# サイドバーでデータソース接続設定
+# サイドバー
 with st.sidebar:
-    st.header("📊 データソース設定")
+    st.title("🧞 Vizzy")
+    
+    image_path = "vizzy_logo.png"
+    if os.path.exists(image_path):
+        image_base64 = load_image(image_path)
+        st.markdown(
+            f"""<div style="text-align: center; margin-bottom: 1em;">
+            <img src="data:image/png;base64,{image_base64}" alt="image" style="width: 100%;"/>
+            </div>""",
+            unsafe_allow_html=True
+        )
+    
+    st.markdown("### 📊 データソース設定")
     
     # データソース選択
     if USE_NEW_CONNECTORS:
-        data_sources = ["ローカルファイル", "BigQuery", "Googleスプレッドシート", "Snowflake", "Databricks"]
+        data_sources = {
+            "ローカルファイル": "local",
+            "BigQuery": "bigquery", 
+            "Googleスプレッドシート": "sheets",
+            "Snowflake": "snowflake",
+            "Databricks": "databricks"
+        }
     else:
-        data_sources = ["ローカルファイル", "BigQuery", "Googleスプレッドシート"]
+        data_sources = {
+            "ローカルファイル": "local",
+            "BigQuery": "bigquery",
+            "Googleスプレッドシート": "sheets"
+        }
     
-    source = st.selectbox("データソースを選択", data_sources)
+    source = st.selectbox(
+        "データソースを選択",
+        list(data_sources.keys()),
+        help="利用するデータソースを選択してください"
+    )
     
     st.divider()
     
-    # 接続設定とデータ取得を同じ場所に配置
-    df = None
-    
-    # ローカルファイル
+    # 各データソースの接続設定
     if source == "ローカルファイル":
-        uploaded_file = st.file_uploader("📄 ファイルをアップロード", type=["csv", "parquet"])
+        uploaded_file = st.file_uploader(
+            "ファイルをアップロード",
+            type=["csv", "parquet"],
+            help="CSVまたはParquetファイルをアップロードしてください"
+        )
         if uploaded_file:
-            df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv") else pd.read_parquet(uploaded_file)
-            st.session_state.df = df
-            st.success("✅ データ読み込み完了")
-
-    # BigQuery
-    elif source == "BigQuery":
-        sa_file = st.file_uploader("🔐 サービスアカウントJSON", type="json", key="bq")
-        if sa_file:
-            with open("temp_bq.json", "wb") as f:
-                f.write(sa_file.getbuffer())
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "temp_bq.json"
-            
-            from google.cloud import bigquery
             try:
-                client = bigquery.Client()
+                if uploaded_file.name.endswith(".csv"):
+                    st.session_state.df = pd.read_csv(uploaded_file)
+                else:
+                    st.session_state.df = pd.read_parquet(uploaded_file)
+                st.success("✅ ファイル読み込み成功！")
+                st.session_state.connected = True
+            except Exception as e:
+                st.error(f"読み込みエラー: {e}")
+    
+    elif source == "BigQuery":
+        with st.expander("接続設定", expanded=True):
+            sa_file = st.file_uploader(
+                "サービスアカウントJSON",
+                type="json",
+                key="bq_sa",
+                help="BigQueryのサービスアカウントJSONファイル"
+            )
+            
+            if sa_file:
+                if st.button("🔗 BigQueryに接続", key="bq_connect"):
+                    try:
+                        # 一時ファイル保存
+                        with open("temp_bq.json", "wb") as f:
+                            f.write(sa_file.getbuffer())
+                        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "temp_bq.json"
+                        
+                        from google.cloud import bigquery
+                        client = bigquery.Client()
+                        st.session_state.bq_client = client
+                        st.session_state.connected = True
+                        st.success("✅ 接続成功！")
+                    except Exception as e:
+                        st.error(f"接続エラー: {e}")
+        
+        # 接続後のデータ選択
+        if st.session_state.connected and hasattr(st.session_state, 'bq_client'):
+            try:
+                client = st.session_state.bq_client
                 datasets = list(client.list_datasets())
                 dataset_names = [d.dataset_id for d in datasets]
+                
                 selected_dataset = st.selectbox("データセット", dataset_names)
+                
                 if selected_dataset:
                     tables = list(client.list_tables(selected_dataset))
                     table_names = [t.table_id for t in tables]
                     selected_table = st.selectbox("テーブル", table_names)
+                    
                     if selected_table:
                         if st.button("📥 データ取得", key="bq_fetch"):
                             with st.spinner("データ取得中..."):
                                 full_table_id = f"{client.project}.{selected_dataset}.{selected_table}"
-                                df = client.query(f"SELECT * FROM `{full_table_id}` LIMIT 1000").to_dataframe()
-                                st.session_state.df = df
-                                st.success("✅ データ読み込み完了")
+                                query = f"SELECT * FROM `{full_table_id}` LIMIT 1000"
+                                st.session_state.df = client.query(query).to_dataframe()
+                                st.success(f"✅ {len(st.session_state.df)}行のデータを取得")
             except Exception as e:
-                st.error(f"BigQueryエラー: {e}")
-
-# Googleスプレッドシート
-elif source == "Googleスプレッドシート":
-    sa_file = st.file_uploader("🔐 スプレッドシートサービスアカウントJSONをアップロード", type="json", key="sheet")
-    if sa_file:
-        with open("temp_sheet.json", "wb") as f:
-            f.write(sa_file.read())
-        import gspread
-        try:
-            gc = gspread.service_account(filename="temp_sheet.json")
-            sheet_url = st.text_input("📄 スプレッドシートのURLを入力")
-            if sheet_url:
-                sh = gc.open_by_url(sheet_url)
-                worksheet_names = [ws.title for ws in sh.worksheets()]
-                selected_ws = st.selectbox("🧾 シートを選択", worksheet_names)
-                if selected_ws:
-                    ws = sh.worksheet(selected_ws)
-                    data = ws.get_all_records()
-                    df = pd.DataFrame(data)
-        except Exception as e:
-            st.error(f"スプレッドシートエラー: {e}")
-
-# Snowflake
-elif source == "Snowflake" and USE_NEW_CONNECTORS:
-    st.subheader("❄️ Snowflake接続設定")
+                st.error(f"エラー: {e}")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        account = st.text_input("アカウント名", placeholder="xxx.snowflakecomputing.com")
-        username = st.text_input("ユーザー名")
-        warehouse = st.text_input("ウェアハウス名")
-    
-    with col2:
-        private_key_file = st.file_uploader("🔑 秘密鍵ファイル（PEM形式）", type=["pem", "key"])
-        passphrase = st.text_input("パスフレーズ（オプション）", type="password")
-    
-    if account and username and warehouse and private_key_file:
-        try:
-            private_key_content = private_key_file.read().decode('utf-8')
+    elif source == "Snowflake" and USE_NEW_CONNECTORS:
+        with st.expander("接続設定", expanded=True):
+            account = st.text_input("アカウント", placeholder="xxx.snowflakecomputing.com")
+            username = st.text_input("ユーザー名")
+            warehouse = st.text_input("ウェアハウス")
             
-            connector = ConnectorFactory.create_connector("snowflake")
-            credentials = {
-                "account": account,
-                "user": username,
-                "private_key": private_key_content,
-                "private_key_passphrase": passphrase if passphrase else None,
-                "warehouse": warehouse
-            }
+            private_key_file = st.file_uploader(
+                "秘密鍵ファイル（PEM）",
+                type=["pem", "key"],
+                help="Programmatic Access Token用の秘密鍵"
+            )
+            passphrase = st.text_input("パスフレーズ（任意）", type="password")
             
-            with st.spinner("Snowflakeに接続中..."):
-                connector.connect(credentials)
-            
-            # データベース選択
-            databases = connector.list_datasets()
-            if databases:
+            if st.button("🔗 Snowflakeに接続", key="sf_connect"):
+                if all([account, username, warehouse, private_key_file]):
+                    try:
+                        private_key_content = private_key_file.read().decode('utf-8')
+                        connector = ConnectorFactory.create_connector("snowflake")
+                        credentials = {
+                            "account": account,
+                            "user": username,
+                            "private_key": private_key_content,
+                            "private_key_passphrase": passphrase if passphrase else None,
+                            "warehouse": warehouse
+                        }
+                        
+                        with st.spinner("接続中..."):
+                            connector.connect(credentials)
+                            st.session_state.connector = connector
+                            st.session_state.connected = True
+                            st.success("✅ 接続成功！")
+                    except Exception as e:
+                        st.error(f"接続エラー: {e}")
+                else:
+                    st.warning("すべての必須項目を入力してください")
+        
+        # 接続後のデータ選択
+        if st.session_state.connected and st.session_state.connector:
+            try:
+                connector = st.session_state.connector
+                databases = connector.list_datasets()
                 selected_db = st.selectbox("データベース", databases)
                 
                 if selected_db:
-                    # テーブル選択
                     tables = connector.list_tables(selected_db)
-                    if tables:
-                        selected_table = st.selectbox("テーブル", tables)
+                    selected_table = st.selectbox("テーブル", tables)
+                    
+                    if selected_table:
+                        if st.button("📥 データ取得", key="sf_fetch"):
+                            with st.spinner("データ取得中..."):
+                                st.session_state.df = connector.get_sample_data(selected_db, selected_table)
+                                st.success(f"✅ {len(st.session_state.df)}行のデータを取得")
+            except Exception as e:
+                st.error(f"エラー: {e}")
+    
+    elif source == "Databricks" and USE_NEW_CONNECTORS:
+        with st.expander("接続設定", expanded=True):
+            server_hostname = st.text_input("サーバーホスト", placeholder="xxx.cloud.databricks.com")
+            http_path = st.text_input("HTTPパス", placeholder="/sql/1.0/endpoints/xxx")
+            access_token = st.text_input("Access Token", type="password", help="Personal Access Token")
+            catalog = st.text_input("カタログ（任意）")
+            
+            if st.button("🔗 Databricksに接続", key="db_connect"):
+                if all([server_hostname, http_path, access_token]):
+                    try:
+                        connector = ConnectorFactory.create_connector("databricks")
+                        credentials = {
+                            "server_hostname": server_hostname,
+                            "http_path": http_path,
+                            "access_token": access_token,
+                            "catalog": catalog if catalog else None
+                        }
                         
-                        if selected_table:
-                            with st.spinner(f"{selected_table}からデータを取得中..."):
-                                df = connector.get_sample_data(selected_db, selected_table)
-                                st.success(f"✅ {len(df)}行のデータを取得しました")
-            
-            connector.close()
-            
-        except Exception as e:
-            st.error(f"Snowflakeエラー: {e}")
-
-# Databricks
-elif source == "Databricks" and USE_NEW_CONNECTORS:
-    st.subheader("🧱 Databricks接続設定")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        server_hostname = st.text_input("サーバーホスト名", placeholder="xxx.cloud.databricks.com")
-        http_path = st.text_input("HTTPパス", placeholder="/sql/1.0/endpoints/xxx")
-    
-    with col2:
-        access_token = st.text_input("Personal Access Token", type="password")
-        catalog = st.text_input("カタログ（オプション）")
-    
-    if server_hostname and http_path and access_token:
-        try:
-            connector = ConnectorFactory.create_connector("databricks")
-            credentials = {
-                "server_hostname": server_hostname,
-                "http_path": http_path,
-                "access_token": access_token,
-                "catalog": catalog if catalog else None
-            }
-            
-            with st.spinner("Databricksに接続中..."):
-                connector.connect(credentials)
-            
-            # カタログ選択
-            catalogs = connector.list_datasets()
-            if catalogs:
+                        with st.spinner("接続中..."):
+                            connector.connect(credentials)
+                            st.session_state.connector = connector
+                            st.session_state.connected = True
+                            st.success("✅ 接続成功！")
+                    except Exception as e:
+                        st.error(f"接続エラー: {e}")
+                else:
+                    st.warning("すべての必須項目を入力してください")
+        
+        # 接続後のデータ選択
+        if st.session_state.connected and st.session_state.connector:
+            try:
+                connector = st.session_state.connector
+                catalogs = connector.list_datasets()
                 selected_catalog = st.selectbox("カタログ", catalogs)
                 
                 if selected_catalog:
-                    # テーブル選択
                     tables = connector.list_tables(selected_catalog)
-                    if tables:
-                        selected_table = st.selectbox("テーブル", tables)
-                        
-                        if selected_table:
-                            with st.spinner(f"{selected_table}からデータを取得中..."):
-                                df = connector.get_sample_data(selected_catalog, selected_table)
-                                st.success(f"✅ {len(df)}行のデータを取得しました")
-            
-            connector.close()
-            
-        except Exception as e:
-            st.error(f"Databricksエラー: {e}")
+                    selected_table = st.selectbox("テーブル", tables)
+                    
+                    if selected_table:
+                        if st.button("📥 データ取得", key="db_fetch"):
+                            with st.spinner("データ取得中..."):
+                                st.session_state.df = connector.get_sample_data(selected_catalog, selected_table)
+                                st.success(f"✅ {len(st.session_state.df)}行のデータを取得")
+            except Exception as e:
+                st.error(f"エラー: {e}")
 
-# テキストクラスタリング機能の関数定義
-def get_embeddings(texts, client):
-    """OpenAI APIを使ってテキストをベクトル化"""
-    embeddings = []
-    batch_size = 100  # APIレート制限を考慮
-    
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i:i+batch_size]
-        try:
-            response = client.embeddings.create(
-                model="text-embedding-ada-002",
-                input=batch
-            )
-            batch_embeddings = [item.embedding for item in response.data]
-            embeddings.extend(batch_embeddings)
-        except Exception as e:
-            st.error(f"埋め込み生成エラー (batch {i//batch_size + 1}): {e}")
-            return None
-    
-    return np.array(embeddings)
+# メインエリア
+st.title("🧞 Vizzy - AI Data Analysis Assistant")
 
-def cluster_texts_with_faiss(embeddings, n_clusters=5):
-    """FAISSを使ってクラスタリング"""
-    # float32に変換（FAISSはfloat32を期待）
-    embeddings_f32 = embeddings.astype(np.float32).copy()
+# データがロードされているかチェック
+if st.session_state.df is not None:
+    df = st.session_state.df
     
-    # 次元数
-    d = embeddings_f32.shape[1]
+    # データプレビュー
+    with st.expander("📊 データプレビュー", expanded=True):
+        st.write(f"データサイズ: {len(df):,}行 × {len(df.columns)}列")
+        st.dataframe(df.head(100))
     
-    # FAISSインデックスを作成（コサイン類似度用）
-    # L2正規化してからインナープロダクトを使うことでコサイン類似度を計算
-    faiss.normalize_L2(embeddings_f32)
-    index = faiss.IndexFlatIP(d)
-    index.add(embeddings_f32)
-    
-    # K-meansクラスタリング (scikit-learn使用、FAISSのk-meansは複雑なため)
-    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-    cluster_labels = kmeans.fit_predict(embeddings_f32)
-    
-    return cluster_labels, kmeans.cluster_centers_
-
-def create_3d_visualization(embeddings, cluster_labels, texts, sample_size=1000):
-    """3次元散布図を作成"""
-    # データが多い場合はサンプリング
-    if len(embeddings) > sample_size:
-        indices = np.random.choice(len(embeddings), sample_size, replace=False)
-        embeddings_sample = embeddings[indices]
-        cluster_labels_sample = cluster_labels[indices]
-        texts_sample = [texts[i] for i in indices]
-    else:
-        embeddings_sample = embeddings
-        cluster_labels_sample = cluster_labels
-        texts_sample = texts
-    
-    # PCAで3次元に削減
-    pca = PCA(n_components=3)
-    embeddings_3d = pca.fit_transform(embeddings_sample)
-    
-    # プロットデータ準備
-    df_plot = pd.DataFrame({
-        'x': embeddings_3d[:, 0],
-        'y': embeddings_3d[:, 1],
-        'z': embeddings_3d[:, 2],
-        'cluster': cluster_labels_sample.astype(str),
-        'text': [text[:100] + "..." if len(text) > 100 else text for text in texts_sample]
-    })
-    
-    # 3D散布図作成
-    fig = px.scatter_3d(
-        df_plot, 
-        x='x', 
-        y='y', 
-        z='z',
-        color='cluster',
-        hover_data=['text'],
-        title="テキストデータのクラスタリング結果（3次元可視化）",
-        labels={'cluster': 'クラスター'}
-    )
-    
-    return fig, pca.explained_variance_ratio_
-
-def summarize_clusters(texts, cluster_labels, client):
-    """各クラスターの内容をGPTで要約"""
-    n_clusters = len(np.unique(cluster_labels))
-    summaries = []
-    
-    for cluster_id in range(n_clusters):
-        cluster_texts = [texts[i] for i in range(len(texts)) if cluster_labels[i] == cluster_id]
-        cluster_size = len(cluster_texts)
-        
-        # サンプルテキストを選択（最大20件）
-        sample_texts = cluster_texts[:20] if len(cluster_texts) > 20 else cluster_texts
-        
-        # GPTで要約
-        prompt = f"""
-以下は同じクラスターに分類されたテキストデータ（全{cluster_size}件中の代表{len(sample_texts)}件）です。
-このクラスターの共通した特徴や主要な意見・テーマを日本語で簡潔に要約してください。
-
-テキストデータ:
-{chr(10).join([f"- {text}" for text in sample_texts])}
-
-要約は以下の形式でお願いします：
-主なテーマ: [テーマ]
-特徴: [特徴の説明]
-代表的な意見: [意見の要約]
-"""
-        
-        try:
-            response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "あなたはテキスト分析の専門家です。与えられたテキストデータの共通点を見つけて簡潔に要約してください。"},
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            summary = response.choices[0].message.content.strip()
-            summaries.append({
-                'cluster_id': cluster_id,
-                'size': cluster_size,
-                'percentage': round(cluster_size / len(texts) * 100, 1),
-                'summary': summary
-            })
-        except Exception as e:
-            summaries.append({
-                'cluster_id': cluster_id,
-                'size': cluster_size,
-                'percentage': round(cluster_size / len(texts) * 100, 1),
-                'summary': f"要約生成エラー: {e}"
-            })
-    
-    return summaries
-
-# 共通処理
-if df is not None:
+    # 日付カラムの自動変換
     for col in df.columns:
         if "date" in col.lower() or "time" in col.lower():
             try:
                 df[col] = pd.to_datetime(df[col])
             except:
                 pass
-
-    st.success("✅ データを読み込みました")
-    st.dataframe(df.head())
-
-    # テキスト列を検出
-    text_columns = []
-    for col in df.columns:
-        if df[col].dtype == 'object':  # 文字列型の列
-            # 平均文字数をチェック（ある程度長いテキストかどうか）
-            avg_length = df[col].dropna().astype(str).str.len().mean()
-            if avg_length > 10:  # 平均10文字以上をテキストデータとみなす
-                text_columns.append(col)
-
-    # テキストクラスタリング機能の表示
-    if text_columns:
-        st.markdown("---")
-        st.subheader("🔍 テキストデータのクラスタリング分析")
-        
-        with st.expander("💡 テキストクラスタリングとは", expanded=False):
-            st.markdown("""
-**テキストクラスタリング機能**では、アンケートの自由記述や意見データを自動で分析し、似たような内容をグループ化します。
-- 大量のテキストデータから主要な意見の傾向を把握
-- 少数派の意見も見逃さずに可視化
-- 各グループの特徴を自動で要約
-- 3次元散布図で直感的に理解
-            """)
-        
-        selected_text_col = st.selectbox("📝 分析するテキスト列を選択", text_columns)
-        n_clusters = st.slider("📊 クラスター数", min_value=2, max_value=10, value=5)
-        
-        if st.button("🚀 テキストクラスタリングを実行"):
-            openai_api_key = st.secrets.get("OPENAI_API_KEY") or st.text_input("🔑 OpenAI APIキーを入力", type="password")
-            
-            if openai_api_key and selected_text_col:
-                client = OpenAI(api_key=openai_api_key)
-                
-                # データの前処理
-                text_data = df[selected_text_col].dropna().astype(str).tolist()
-                text_data = [text for text in text_data if len(text.strip()) > 5]  # 短すぎるテキストを除去
-                
-                if len(text_data) < 10:
-                    st.warning("⚠️ 分析に十分なテキストデータがありません（最低10件必要）")
-                else:
-                    with st.spinner("テキストをベクトル化中..."):
-                        embeddings = get_embeddings(text_data, client)
-                    
-                    if embeddings is not None:
-                        with st.spinner("クラスタリング実行中..."):
-                            cluster_labels, cluster_centers = cluster_texts_with_faiss(embeddings, n_clusters)
-                        
-                        # 3次元可視化
-                        st.subheader("📈 3次元散布図での可視化")
-                        fig_3d, explained_variance = create_3d_visualization(embeddings, cluster_labels, text_data)
-                        st.plotly_chart(fig_3d, use_container_width=True)
-                        
-                        st.info(f"📊 主成分分析による寄与率: {explained_variance[0]:.1%}, {explained_variance[1]:.1%}, {explained_variance[2]:.1%}")
-                        
-                        # クラスター要約
-                        st.subheader("📝 各クラスターの要約")
-                        with st.spinner("各クラスターを分析中..."):
-                            summaries = summarize_clusters(text_data, cluster_labels, client)
-                        
-                        # 結果表示
-                        for summary in sorted(summaries, key=lambda x: x['size'], reverse=True):
-                            with st.expander(f"🏷️ クラスター {summary['cluster_id'] + 1} ({summary['size']}件, {summary['percentage']}%)", expanded=True):
-                                st.markdown(summary['summary'])
-                        
-                        # 統計情報
-                        st.subheader("📊 分析統計")
-                        col1, col2, col3 = st.columns(3)
-                        
-                        with col1:
-                            st.metric("分析対象テキスト数", len(text_data))
-                        
-                        with col2:
-                            st.metric("クラスター数", n_clusters)
-                        
-                        with col3:
-                            largest_cluster_size = max([s['size'] for s in summaries])
-                            smallest_cluster_size = min([s['size'] for s in summaries])
-                            st.metric("最大/最小クラスター", f"{largest_cluster_size}/{smallest_cluster_size}")
-
-    # 既存の機能（DuckDB処理）
-    # DuckDB登録
+    
+    # DuckDBへの登録
     duck_conn = duckdb.connect()
     duck_conn.register("data", df)
+    
+    # Text2SQL機能
+    st.header("💬 自然言語でデータを探索")
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        query_input = st.text_area(
+            "質問を入力してください",
+            placeholder="例: 売上の月別推移を見せて、上位10商品の売上を棒グラフで表示して",
+            height=100
+        )
+    
+    with col2:
+        st.write("")
+        st.write("")
+        analyze_button = st.button("🔍 分析実行", type="primary", use_container_width=True)
+    
+    if analyze_button and query_input:
+        openai_api_key = st.secrets.get("OPENAI_API_KEY")
+        if not openai_api_key:
+            openai_api_key = st.text_input("OpenAI APIキーを入力", type="password")
+        
+        if openai_api_key:
+            client = OpenAI(api_key=openai_api_key)
+            
+            # スキーマ情報取得
+            schema = {}
+            for col in df.columns:
+                dtype = str(df[col].dtype)
+                schema[col] = dtype
+            
+            # サンプルデータ
+            sample_data = df.head(3).to_string()
+            
+            # SQL生成プロンプト
+            prompt = f"""
+以下のテーブル情報を基に、ユーザーの質問に答えるDuckDB SQLクエリを生成してください。
 
-    # サンプル
-    with st.expander("💡 サンプル質問（各種グラフ対応）", expanded=False):
-        st.markdown("""
-- 「カテゴリごとの売上を棒グラフで表示して」
-- 「月別の売上推移を教えて」
-- 「地域ごとの売上割合を円グラフで見せて」
-- 「気温と売上の関係を散布図で見せて」
-        """)
+テーブル名: data
+カラム情報: {schema}
 
-    # OpenAI APIキー
-    openai_api_key = st.secrets.get("OPENAI_API_KEY") or st.text_input("🔑 OpenAI APIキーを入力", type="password")
-    user_input = st.chat_input("自然言語で質問してください")
-
-    if user_input and openai_api_key:
-        with st.chat_message("user"):
-            st.markdown(user_input)
-
-        with st.chat_message("assistant"):
-            with st.spinner("分析中..."):
-                client = OpenAI(api_key=openai_api_key)
-
-                schema_desc = "\n".join([f"{col} ({dtype})" for col, dtype in zip(df.columns, df.dtypes)])
-                sample_data = df.head(3).to_string() 
-                prompt = f"""
-あなたはDuckDBに対してSQLを生成するアシスタントです。
-
-基本ルール:
-- テーブル名は `data` です
-- ある程度曖昧な質問に対してもカラムを予測してSQLを発行してください
-- 出力はSQL文のみ。コードブロックや装飾は不要です
-
-重要な注意事項:
-1. **列名の正確性**: 列名は下記スキーマと完全に一致させてください（括弧や特殊文字も含めて正確に）
-2. **日付処理**: DuckDBでは文字列を日付関数に使う場合、必ず `CAST(列 AS DATE)` を使用してください
-   ただし、日付型でない列（文字列、数値など）に対してはCASTしないでください
-3. **相関・関係性分析**: 「関係」「相関」「関連」などの質問では、`SELECT col1, col2 FROM data` のように2列の数値データを含む結果を返してください（散布図描画のため）
-4. **データ型の確認**: 下記のデータ型情報とサンプルデータを参考に、適切な列を選択してください
-5. **文字列比較**: 文字列の比較では等号（=）やLIKEを使い、不適切なCASTは避けてください
-
-データスキーマ:
-{schema_desc}
-
-サンプルデータ（参考）:
+サンプルデータ:
 {sample_data}
 
-質問: {user_input}
+ユーザーの質問: {query_input}
+
+重要な指示:
+- DuckDBの構文を使用すること
+- 日付型のカラムはCAST(column_name AS DATE)を使用
+- グラフを要求された場合は、適切なGROUP BYとORDER BYを含める
+- SQLクエリのみを返す（説明は不要）
 """
-                try:
+            
+            try:
+                with st.spinner("SQL生成中..."):
                     response = client.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[
-                            {"role": "system", "content": "あなたはSQLを生成するデータアナリストです。"},
+                            {"role": "system", "content": "あなたはSQL生成の専門家です。"},
                             {"role": "user", "content": prompt}
                         ]
                     )
-
-                    raw_sql = response.choices[0].message.content.strip()
-                    sql = re.sub(r"```sql|```", "", raw_sql).strip()
-                    st.markdown(f"🧠 **生成されたSQL:**\n```sql\n{sql}\n```")
-
-                    result_df = duck_conn.execute(sql).fetchdf()
-                    st.dataframe(result_df)
-
-                    if result_df.shape[1] >= 2:
-                        x, y = result_df.columns[0], result_df.columns[1]
-
-                        q = user_input.lower()
-                        if any(w in q for w in ["割合", "比率", "シェア", "円"]):
-                            chart_type = "pie"
-                        elif any(w in q for w in ["相関", "関係", "関連"]):
-                            chart_type = "scatter"
-                        elif any(w in q for w in ["時間", "日時", "推移", "傾向", "月", "日", "時系列"]):
-                            chart_type = "line"
-                        else:
-                            chart_type = "bar"
-
-                        try:
-                            result_df[x] = pd.to_datetime(result_df[x])
-                        except:
-                            pass
-
-                        if chart_type == "pie":
-                            st.info("📊 円グラフでカテゴリごとの割合を可視化しています")
-                            fig = px.pie(result_df, names=x, values=y)
-                        elif chart_type == "scatter":
-                            st.info("📈 散布図で2つの数値の関係性を視覚化しています。")
-                            result_df[x] = pd.to_numeric(result_df[x], errors='coerce')
-                            result_df[y] = pd.to_numeric(result_df[y], errors='coerce')
-                            fig = px.scatter(result_df, x=x, y=y)
-                            if pd.api.types.is_numeric_dtype(result_df[x]) and pd.api.types.is_numeric_dtype(result_df[y]):
-                                try:
-                                    corr = np.corrcoef(result_df[x], result_df[y])[0, 1]
-                                    st.success(f"📊 **相関係数**: `{corr:.3f}`")
-                                except:
-                                    st.warning("⚠️ 相関係数の計算に失敗しました。")
-                        elif chart_type == "line":
-                            st.info("📈 折れ線グラフで時系列の推移を表示しています。")
-                            fig = px.line(result_df, x=x, y=y)
-                        else:
-                            st.info("📊 棒グラフでカテゴリ別の比較を表示しています。")
-                            fig = px.bar(result_df, x=x, y=y)
-
-                        st.plotly_chart(fig, use_container_width=True)
-
-                        # 🔍 AIによるグラフ要約
-                        summary_prompt = f"""
-以下のデータは「{chart_type}」グラフで可視化されたものです。
-ユーザーの質問「{user_input}」に対する結果です。
-この結果から読み取れるポイントをユーザーの質問に結論から答えるように、日本語で簡潔に正確なデータを元に5行くらいで要約してください。
-
-{result_df.head(20).to_csv(index=False)}
-"""
-                        try:
-                            summary_response = client.chat.completions.create(
-                                model="gpt-3.5-turbo",
-                                messages=[
-                                    {"role": "system", "content": "あなたはデータ可視化の専門家で、グラフから読み取れる内容をわかりやすく要約します。"},
-                                    {"role": "user", "content": summary_prompt}
-                                ]
-                            )
-                            summary_text = summary_response.choices[0].message.content.strip()
-                            st.markdown("📝 **グラフの要約:**")
-                            st.success(summary_text)
-
-                        except Exception as e:
-                            st.warning(f"要約の生成に失敗しました: {e}")
-
-                    else:
-                        st.info("📉 グラフ描画には2列以上の結果が必要です。")
-
-                except Exception as e:
-                    st.error(f"❌ エラー: {e}")
-                    # エラーの種類に応じたヘルプを表示
-                    error_str = str(e)
-                    if "not found in FROM clause" in error_str:
-                        st.info("💡 **列名エラー**: 以下の列名を参考に、正確な列名で質問してください")
-                        col_list = "、".join([f"`{col}`" for col in df.columns])
-                        st.markdown(f"**利用可能な列**: {col_list}")
-                    elif "CAST" in error_str:
-                        st.info("💡 **データ型エラー**: 日付でない列を日付として処理しようとしています")
-                    else:
-                        st.info("💡 質問を少し変えて、もう一度お試しください")
+                
+                sql_query = response.choices[0].message.content.strip()
+                sql_query = sql_query.replace("```sql", "").replace("```", "").strip()
+                
+                st.code(sql_query, language="sql")
+                
+                # クエリ実行
+                try:
+                    result_df = duck_conn.execute(sql_query).fetchdf()
                     
-                    # 参考用にデータのサンプルを表示
-                    st.markdown("**データのサンプル（参考）:**")
-                    st.dataframe(df.head())
+                    # 結果表示
+                    st.subheader("📊 結果")
+                    st.dataframe(result_df)
+                    
+                    # グラフ生成の判定と作成
+                    if len(result_df.columns) >= 2:
+                        # グラフタイプを推定
+                        if "グラフ" in query_input or "推移" in query_input or "trend" in query_input.lower():
+                            if any(dtype in str(result_df[result_df.columns[0]].dtype) for dtype in ['date', 'time']):
+                                fig = px.line(result_df, x=result_df.columns[0], y=result_df.columns[1])
+                                st.plotly_chart(fig, use_container_width=True)
+                            else:
+                                fig = px.bar(result_df, x=result_df.columns[0], y=result_df.columns[1])
+                                st.plotly_chart(fig, use_container_width=True)
+                        elif "棒" in query_input or "bar" in query_input.lower():
+                            fig = px.bar(result_df, x=result_df.columns[0], y=result_df.columns[1])
+                            st.plotly_chart(fig, use_container_width=True)
+                        elif "円" in query_input or "pie" in query_input.lower():
+                            fig = px.pie(result_df, names=result_df.columns[0], values=result_df.columns[1])
+                            st.plotly_chart(fig, use_container_width=True)
+                
+                except Exception as e:
+                    st.error(f"SQLエラー: {e}")
+            
+            except Exception as e:
+                st.error(f"AI生成エラー: {e}")
+        else:
+            st.warning("OpenAI APIキーを入力してください")
+
+else:
+    # データ未ロード時の案内
+    st.info("👈 左のサイドバーからデータソースを選択してください")
+    
+    with st.expander("使い方", expanded=True):
+        st.markdown("""
+### 🚀 クイックスタート
+
+1. **データソースを選択**: サイドバーから利用するデータソースを選択
+2. **接続設定**: 必要な認証情報を入力して接続
+3. **データ取得**: テーブルを選択してデータを取得
+4. **自然言語で分析**: 質問を入力して分析を実行
+
+### 📊 対応データソース
+
+- **ローカルファイル**: CSV, Parquet
+- **BigQuery**: Google Cloud BigQuery
+- **Snowflake**: Programmatic Access Token認証
+- **Databricks**: Personal Access Token認証
+- **Google Sheets**: サービスアカウント認証
+
+### 💡 質問例
+
+- 「月別の売上推移を見せて」
+- 「カテゴリ別の売上を棒グラフで表示」
+- 「上位10商品の売上割合を円グラフで」
+- 「昨年同月比の成長率を計算して」
+        """)
