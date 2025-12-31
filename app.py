@@ -36,8 +36,7 @@ if 'connector' not in st.session_state:
 
 # サイドバー
 with st.sidebar:
-    st.title("🧞 Vizzy")
-    st.markdown("### 📊 データソース設定")
+    st.markdown("### データソース設定")
     
     # データソース選択
     if USE_NEW_CONNECTORS:
@@ -273,7 +272,7 @@ if st.session_state.df is not None:
                 pass
     
     # Text2SQL機能
-    st.header("💬 自然言語でデータを探索")
+    st.header("自然言語でデータを探索")
     
     # データソースの種類を判定
     if hasattr(st.session_state, 'connector') and st.session_state.connector:
