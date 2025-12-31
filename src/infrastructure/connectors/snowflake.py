@@ -72,6 +72,15 @@ class SnowflakeConnector(BaseConnector):
         """指定データベース内のテーブルリストを取得"""
         self._ensure_connected()
         self.cursor.execute(f"USE DATABASE {dataset}")
+        
+        # デフォルトスキーマがない場合、最初のスキーマを使用
+        if not self.connection.schema:
+            self.cursor.execute("SHOW SCHEMAS")
+            schemas = self.cursor.fetchall()
+            if schemas:
+                default_schema = schemas[0][1]  # 最初のスキーマ名
+                self.cursor.execute(f"USE SCHEMA {default_schema}")
+        
         self.cursor.execute("SHOW TABLES")
         tables = self.cursor.fetchall()
         return [table[1] for table in tables]  # name列を取得
