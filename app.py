@@ -9,7 +9,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
 import re
-import base64
 from openai import OpenAI
 import faiss
 from sklearn.cluster import KMeans
@@ -27,11 +26,6 @@ except ImportError as e:
 
 st.set_page_config(page_title="Vizzye", layout="wide", initial_sidebar_state="expanded")
 
-# ロゴ画像表示
-def load_image(image_path):
-    with open(image_path, "rb") as img_file:
-        return base64.b64encode(img_file.read()).decode()
-
 # セッション状態の初期化
 if 'df' not in st.session_state:
     st.session_state.df = None
@@ -43,17 +37,6 @@ if 'connector' not in st.session_state:
 # サイドバー
 with st.sidebar:
     st.title("🧞 Vizzy")
-    
-    image_path = "vizzy_logo.png"
-    if os.path.exists(image_path):
-        image_base64 = load_image(image_path)
-        st.markdown(
-            f"""<div style="text-align: center; margin-bottom: 1em;">
-            <img src="data:image/png;base64,{image_base64}" alt="image" style="width: 100%;"/>
-            </div>""",
-            unsafe_allow_html=True
-        )
-    
     st.markdown("### 📊 データソース設定")
     
     # データソース選択
