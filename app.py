@@ -253,7 +253,7 @@ with st.sidebar:
                 st.error(f"エラー: {e}")
 
 # メインエリア
-st.title("🧞 Vizzy - AI Data Analysis Assistant")
+st.title("🧞 Vizzy - Adhoc Analytics Assistant")
 
 # データがロードされているかチェック
 if st.session_state.df is not None:
