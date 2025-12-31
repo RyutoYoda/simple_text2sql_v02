@@ -62,19 +62,29 @@ class SnowflakeConnector(BaseConnector):
         self.is_connected = True
     
     def list_datasets(self) -> List[str]:
-        """利用可能なデータベース（スキーマ）のリストを取得"""
+        """利用可能なデータベースのリストを取得"""
         self._ensure_connected()
         self.cursor.execute("SHOW DATABASES")
         databases = self.cursor.fetchall()
         return [db[1] for db in databases]  # name列を取得
     
-    def list_tables(self, dataset: str) -> List[str]:
-        """指定データベース内のテーブルリストを取得"""
+    def list_schemas(self, database: str) -> List[str]:
+        """指定データベース内のスキーマリストを取得"""
+        self._ensure_connected()
+        self.cursor.execute(f"USE DATABASE {database}")
+        self.cursor.execute("SHOW SCHEMAS")
+        schemas = self.cursor.fetchall()
+        return [schema[1] for schema in schemas]  # name列を取得
+    
+    def list_tables(self, dataset: str, schema: str = None) -> List[str]:
+        """指定データベース・スキーマ内のテーブルリストを取得"""
         self._ensure_connected()
         self.cursor.execute(f"USE DATABASE {dataset}")
         
-        # デフォルトスキーマがない場合、最初のスキーマを使用
-        if not self.connection.schema:
+        if schema:
+            self.cursor.execute(f"USE SCHEMA {schema}")
+        else:
+            # スキーマが指定されていない場合は、最初のスキーマを使用
             self.cursor.execute("SHOW SCHEMAS")
             schemas = self.cursor.fetchall()
             if schemas:
@@ -85,10 +95,13 @@ class SnowflakeConnector(BaseConnector):
         tables = self.cursor.fetchall()
         return [table[1] for table in tables]  # name列を取得
     
-    def get_sample_data(self, dataset: str, table: str, limit: int = 1000) -> pd.DataFrame:
+    def get_sample_data(self, dataset: str, table: str, schema: str = None, limit: int = 1000) -> pd.DataFrame:
         """サンプルデータを取得"""
         self._ensure_connected()
-        query = f"SELECT * FROM {dataset}.{table} LIMIT {limit}"
+        if schema:
+            query = f"SELECT * FROM {dataset}.{schema}.{table} LIMIT {limit}"
+        else:
+            query = f"SELECT * FROM {dataset}.{table} LIMIT {limit}"
         self.cursor.execute(query)
         
         # カラム名を取得
@@ -97,10 +110,13 @@ class SnowflakeConnector(BaseConnector):
         
         return pd.DataFrame(data, columns=columns)
     
-    def get_table_schema(self, dataset: str, table: str) -> Dict[str, str]:
+    def get_table_schema(self, dataset: str, table: str, schema: str = None) -> Dict[str, str]:
         """テーブルスキーマを取得"""
         self._ensure_connected()
-        self.cursor.execute(f"DESCRIBE TABLE {dataset}.{table}")
+        if schema:
+            self.cursor.execute(f"DESCRIBE TABLE {dataset}.{schema}.{table}")
+        else:
+            self.cursor.execute(f"DESCRIBE TABLE {dataset}.{table}")
         schema_info = self.cursor.fetchall()
         
         schema = {}

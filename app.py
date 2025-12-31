@@ -174,14 +174,29 @@ with st.sidebar:
                 selected_db = st.selectbox("データベース", databases)
                 
                 if selected_db:
-                    tables = connector.list_tables(selected_db)
-                    selected_table = st.selectbox("テーブル", tables)
-                    
-                    if selected_table:
-                        if st.button("📥 データ取得", key="sf_fetch"):
-                            with st.spinner("データ取得中..."):
-                                st.session_state.df = connector.get_sample_data(selected_db, selected_table)
-                                st.success(f"✅ {len(st.session_state.df)}行のデータを取得")
+                    # Snowflakeの場合はスキーマ選択も追加
+                    if hasattr(connector, 'list_schemas'):
+                        schemas = connector.list_schemas(selected_db)
+                        selected_schema = st.selectbox("スキーマ", schemas)
+                        
+                        if selected_schema:
+                            tables = connector.list_tables(selected_db, selected_schema)
+                            selected_table = st.selectbox("テーブル", tables)
+                            
+                            if selected_table:
+                                if st.button("📥 データ取得", key="sf_fetch"):
+                                    with st.spinner("データ取得中..."):
+                                        st.session_state.df = connector.get_sample_data(selected_db, selected_table, selected_schema)
+                                        st.success(f"✅ {len(st.session_state.df)}行のデータを取得")
+                    else:
+                        tables = connector.list_tables(selected_db)
+                        selected_table = st.selectbox("テーブル", tables)
+                        
+                        if selected_table:
+                            if st.button("📥 データ取得", key="sf_fetch"):
+                                with st.spinner("データ取得中..."):
+                                    st.session_state.df = connector.get_sample_data(selected_db, selected_table)
+                                    st.success(f"✅ {len(st.session_state.df)}行のデータを取得")
             except Exception as e:
                 st.error(f"エラー: {e}")
     
