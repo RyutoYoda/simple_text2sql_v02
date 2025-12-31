@@ -30,6 +30,25 @@ class BaseConnector(DataSourceConnector):
         """継承先で実装"""
         raise NotImplementedError
     
+    def execute_query(self, query: str) -> pd.DataFrame:
+        """SQLクエリを実行
+        
+        Args:
+            query: 実行するSQLクエリ
+            
+        Returns:
+            クエリ結果のDataFrame
+        """
+        raise NotImplementedError
+    
+    def get_dialect(self) -> str:
+        """SQLダイアレクトを返す
+        
+        Returns:
+            "duckdb", "snowflake", "bigquery", "databricks"など
+        """
+        return "duckdb"
+    
     def close(self) -> None:
         """接続を閉じる"""
         if self.connection:

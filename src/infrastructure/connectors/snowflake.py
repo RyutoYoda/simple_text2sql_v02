@@ -127,6 +127,21 @@ class SnowflakeConnector(BaseConnector):
         
         return schema
     
+    def execute_query(self, query: str) -> pd.DataFrame:
+        """クエリを実行し結果をDataFrameで返す"""
+        self._ensure_connected()
+        self.cursor.execute(query)
+        
+        # カラム名を取得
+        columns = [desc[0] for desc in self.cursor.description]
+        data = self.cursor.fetchall()
+        
+        return pd.DataFrame(data, columns=columns)
+    
+    def get_dialect(self) -> str:
+        """SQLダイアレクトを返す"""
+        return "snowflake"
+    
     def close(self) -> None:
         """接続を閉じる"""
         if self.cursor:

@@ -184,6 +184,11 @@ with st.sidebar:
                             selected_table = st.selectbox("テーブル", tables)
                             
                             if selected_table:
+                                # セッション状態に保存（SQL生成時に使用）
+                                st.session_state.selected_db = selected_db
+                                st.session_state.selected_schema = selected_schema
+                                st.session_state.selected_table = selected_table
+                                
                                 if st.button("📥 データ取得", key="sf_fetch"):
                                     with st.spinner("データ取得中..."):
                                         st.session_state.df = connector.get_sample_data(selected_db, selected_table, selected_schema)
@@ -267,12 +272,18 @@ if st.session_state.df is not None:
             except:
                 pass
     
-    # DuckDBへの登録
-    duck_conn = duckdb.connect()
-    duck_conn.register("data", df)
-    
     # Text2SQL機能
     st.header("💬 自然言語でデータを探索")
+    
+    # データソースの種類を判定
+    if hasattr(st.session_state, 'connector') and st.session_state.connector:
+        connector = st.session_state.connector
+        dialect = connector.get_dialect() if hasattr(connector, 'get_dialect') else 'duckdb'
+    else:
+        # ローカルファイルの場合はDuckDBを使用
+        dialect = 'duckdb'
+        duck_conn = duckdb.connect()
+        duck_conn.register("data", df)
     
     col1, col2 = st.columns([3, 1])
     
@@ -305,11 +316,56 @@ if st.session_state.df is not None:
             # サンプルデータ
             sample_data = df.head(3).to_string()
             
-            # SQL生成プロンプト
-            prompt = f"""
-以下のテーブル情報を基に、ユーザーの質問に答えるDuckDB SQLクエリを生成してください。
+            # SQL生成プロンプト（データベース別に最適化）
+            if dialect == 'snowflake':
+                # Snowflake用のテーブル情報取得
+                if hasattr(st.session_state, 'selected_db') and hasattr(st.session_state, 'selected_schema') and hasattr(st.session_state, 'selected_table'):
+                    table_ref = f"{st.session_state.selected_db}.{st.session_state.selected_schema}.{st.session_state.selected_table}"
+                else:
+                    table_ref = "data"
+                    
+                prompt = f"""
+以下のテーブル情報を基に、ユーザーの質問に答えるSnowflake SQLクエリを生成してください。
+
+テーブル名: {table_ref}
+カラム情報: {schema}
+
+サンプルデータ:
+{sample_data}
+
+ユーザーの質問: {query_input}
+
+重要な指示:
+- Snowflakeの構文を使用すること
+- 日付関数: DATE_TRUNC(), DATEADD(), DATEDIFF()など
+- 文字列関数: CONCAT(), SPLIT_PART(), REGEXP_SUBSTR()など
+- グラフを要求された場合は、適切なGROUP BYとORDER BYを含める
+- SQLクエリのみを返す（説明は不要）
+"""
+            elif dialect == 'bigquery':
+                prompt = f"""
+以下のテーブル情報を基に、ユーザーの質問に答えるBigQuery SQLクエリを生成してください。
 
 テーブル名: data
+カラム情報: {schema}
+
+サンプルデータ:
+{sample_data}
+
+ユーザーの質問: {query_input}
+
+重要な指示:
+- BigQueryの標準SQL構文を使用すること
+- 日付関数: DATE_TRUNC(), DATE_ADD(), DATE_DIFF()など
+- ARRAY、STRUCTなどの複雑な型も考慮
+- グラフを要求された場合は、適切なGROUP BYとORDER BYを含める
+- SQLクエリのみを返す（説明は不要）
+"""
+            else:  # DuckDB (デフォルト)
+                prompt = f"""
+以下のテーブル情報を基に、ユーザーの質問に答えるDuckDB SQLクエリを生成してください。
+
+テーフル名: data
 カラム情報: {schema}
 
 サンプルデータ:
@@ -339,9 +395,14 @@ if st.session_state.df is not None:
                 
                 st.code(sql_query, language="sql")
                 
-                # クエリ実行
+                # クエリ実行（データソース別）
                 try:
-                    result_df = duck_conn.execute(sql_query).fetchdf()
+                    if dialect in ['snowflake', 'bigquery', 'databricks'] and hasattr(connector, 'execute_query'):
+                        # 外部データベースの場合は直接実行
+                        result_df = connector.execute_query(sql_query)
+                    else:
+                        # ローカルデータの場合はDuckDBで実行
+                        result_df = duck_conn.execute(sql_query).fetchdf()
                     
                     # 結果表示
                     st.subheader("📊 結果")
