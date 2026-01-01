@@ -1,5 +1,7 @@
 # Vizzy - Adhoc Analytics Assistant
 
+## 使用技術
+
 <p align="left">
   <a href="https://www.python.org/">
     <img src="https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white" />
@@ -20,6 +22,8 @@
     <img src="https://img.shields.io/badge/Plotly-3F4F75?style=flat&logo=plotly&logoColor=white" />
   </a>
 </p>
+
+## 対応データソース
 
 <p align="left">
   <a href="https://cloud.google.com/bigquery">
