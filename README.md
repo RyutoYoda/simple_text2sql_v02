@@ -1,5 +1,5 @@
 # Vizzy - Adhoc Analytics Assistant
-
+読み取り専用権限でデータベースに接続し、自然言語でアドホック分析を行えるAIアシスタントツールです。SELECT文のみ実行可能で、安全にデータ探索ができます。
 ## 使用技術
 
 <p align="left">
@@ -39,8 +39,6 @@
     <img src="https://img.shields.io/badge/Google%20Sheets-34A853?style=flat&logo=google-sheets&logoColor=white" />
   </a>
 </p>
-
-読み取り専用権限でデータベースに接続し、自然言語でアドホック分析を行えるAIアシスタントツールです。SELECT文のみ実行可能で、安全にデータ探索ができます。
 
 ## 主な機能
 
