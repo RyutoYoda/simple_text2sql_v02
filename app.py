@@ -240,14 +240,34 @@ with st.sidebar:
                 selected_catalog = st.selectbox("カタログ", catalogs)
                 
                 if selected_catalog:
-                    tables = connector.list_tables(selected_catalog)
-                    selected_table = st.selectbox("テーブル", tables)
-                    
-                    if selected_table:
-                        if st.button("📥 データ取得", key="db_fetch"):
-                            with st.spinner("データ取得中..."):
-                                st.session_state.df = connector.get_sample_data(selected_catalog, selected_table)
-                                st.success(f"✅ {len(st.session_state.df)}行のデータを取得")
+                    # Databricksの場合はスキーマ選択も追加
+                    if hasattr(connector, 'list_schemas'):
+                        schemas = connector.list_schemas(selected_catalog)
+                        selected_schema = st.selectbox("スキーマ", schemas)
+                        
+                        if selected_schema:
+                            tables = connector.list_tables(selected_catalog, selected_schema)
+                            selected_table = st.selectbox("テーブル", tables)
+                            
+                            if selected_table:
+                                # セッション状態に保存
+                                st.session_state.selected_catalog = selected_catalog
+                                st.session_state.selected_schema = selected_schema
+                                st.session_state.selected_table = selected_table
+                                
+                                if st.button("📥 データ取得", key="db_fetch"):
+                                    with st.spinner("データ取得中..."):
+                                        st.session_state.df = connector.get_sample_data(selected_catalog, selected_table, selected_schema)
+                                        st.success(f"✅ {len(st.session_state.df)}行のデータを取得")
+                    else:
+                        tables = connector.list_tables(selected_catalog)
+                        selected_table = st.selectbox("テーブル", tables)
+                        
+                        if selected_table:
+                            if st.button("📥 データ取得", key="db_fetch"):
+                                with st.spinner("データ取得中..."):
+                                    st.session_state.df = connector.get_sample_data(selected_catalog, selected_table)
+                                    st.success(f"✅ {len(st.session_state.df)}行のデータを取得")
             except Exception as e:
                 st.error(f"エラー: {e}")
 
@@ -357,6 +377,31 @@ if st.session_state.df is not None:
 - BigQueryの標準SQL構文を使用すること
 - 日付関数: DATE_TRUNC(), DATE_ADD(), DATE_DIFF()など
 - ARRAY、STRUCTなどの複雑な型も考慮
+- グラフを要求された場合は、適切なGROUP BYとORDER BYを含める
+- SQLクエリのみを返す（説明は不要）
+"""
+            elif dialect == 'databricks':
+                # Databricks用のテーブル情報取得
+                if hasattr(st.session_state, 'selected_catalog') and hasattr(st.session_state, 'selected_schema') and hasattr(st.session_state, 'selected_table'):
+                    table_ref = f"{st.session_state.selected_catalog}.{st.session_state.selected_schema}.{st.session_state.selected_table}"
+                else:
+                    table_ref = "data"
+                    
+                prompt = f"""
+以下のテーブル情報を基に、ユーザーの質問に答えるDatabricks SQLクエリを生成してください。
+
+テーブル名: {table_ref}
+カラム情報: {schema}
+
+サンプルデータ:
+{sample_data}
+
+ユーザーの質問: {query_input}
+
+重要な指示:
+- Databricksの構文を使用すること（Spark SQLベース）
+- 日付関数: date_trunc(), date_add(), datediff()など
+- カタログ.スキーマ.テーブル形式の完全修飾名を使用
 - グラフを要求された場合は、適切なGROUP BYとORDER BYを含める
 - SQLクエリのみを返す（説明は不要）
 """
