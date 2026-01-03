@@ -41,11 +41,11 @@ with st.sidebar:
     # データソース選択
     if USE_NEW_CONNECTORS:
         data_sources = {
-            "ローカルファイル": "local",
-            "BigQuery": "bigquery", 
-            "Googleスプレッドシート": "sheets",
-            "Snowflake": "snowflake",
-            "Databricks": "databricks"
+            "ローカルファイル📁": "local",
+            "BigQuery🔍": "bigquery", 
+            "Googleスプレッドシート🟩": "sheets",
+            "Snowflake❄️": "snowflake",
+            "Databricks🧱": "databricks"
         }
     else:
         data_sources = {
@@ -204,7 +204,7 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"エラー: {e}")
     
-    elif source == "Databricks" and USE_NEW_CONNECTORS:
+    elif source == "Databricks🧱" and USE_NEW_CONNECTORS:
         with st.expander("接続設定", expanded=True):
             server_hostname = st.text_input("サーバーホスト", placeholder="xxx.cloud.databricks.com")
             http_path = st.text_input("HTTPパス", placeholder="/sql/1.0/endpoints/xxx")
@@ -236,12 +236,15 @@ with st.sidebar:
         if st.session_state.connected and st.session_state.connector:
             try:
                 connector = st.session_state.connector
+                print(f"DEBUG - Connector class name: {type(connector).__name__}")
+                
                 catalogs = connector.list_datasets()
                 selected_catalog = st.selectbox("カタログ", catalogs)
                 
                 if selected_catalog:
                     # SnowflakeとDatabricksの場合はスキーマ選択も追加
                     if type(connector).__name__ in ['SnowflakeConnector', 'DatabricksConnector']:
+                        print(f"DEBUG - Schema selection UI should be shown")
                         schemas = connector.list_schemas(selected_catalog)
                         selected_schema = st.selectbox("スキーマ", schemas)
                         
@@ -260,6 +263,7 @@ with st.sidebar:
                                         st.session_state.df = connector.get_sample_data(selected_catalog, selected_table, schema=selected_schema)
                                         st.success(f"✅ {len(st.session_state.df)}行のデータを取得")
                     else:
+                        print(f"DEBUG - Schema selection UI NOT shown for {type(connector).__name__}")
                         tables = connector.list_tables(selected_catalog)
                         selected_table = st.selectbox("テーブル", tables)
                         
