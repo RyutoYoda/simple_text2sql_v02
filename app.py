@@ -240,8 +240,8 @@ with st.sidebar:
                 selected_catalog = st.selectbox("カタログ", catalogs)
                 
                 if selected_catalog:
-                    # Databricksの場合はスキーマ選択も追加
-                    if hasattr(connector, 'list_schemas'):
+                    # SnowflakeとDatabricksの場合はスキーマ選択も追加
+                    if type(connector).__name__ in ['SnowflakeConnector', 'DatabricksConnector']:
                         schemas = connector.list_schemas(selected_catalog)
                         selected_schema = st.selectbox("スキーマ", schemas)
                         
