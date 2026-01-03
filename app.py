@@ -459,18 +459,32 @@ if st.session_state.df is not None:
                     # グラフ生成の判定と作成
                     if len(result_df.columns) >= 2:
                         # グラフタイプを推定
-                        if "グラフ" in query_input or "推移" in query_input or "trend" in query_input.lower():
-                            if any(dtype in str(result_df[result_df.columns[0]].dtype) for dtype in ['date', 'time']):
-                                fig = px.line(result_df, x=result_df.columns[0], y=result_df.columns[1])
-                                st.plotly_chart(fig, use_container_width=True)
-                            else:
-                                fig = px.bar(result_df, x=result_df.columns[0], y=result_df.columns[1])
-                                st.plotly_chart(fig, use_container_width=True)
-                        elif "棒" in query_input or "bar" in query_input.lower():
-                            fig = px.bar(result_df, x=result_df.columns[0], y=result_df.columns[1])
-                            st.plotly_chart(fig, use_container_width=True)
-                        elif "円" in query_input or "pie" in query_input.lower():
+                        query_lower = query_input.lower()
+                        
+                        # 円グラフ: 円、割合、比率、構成
+                        if any(word in query_input for word in ["円", "割合", "比率", "構成", "内訳"]) or "pie" in query_lower:
                             fig = px.pie(result_df, names=result_df.columns[0], values=result_df.columns[1])
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                        # 折れ線グラフ: 時系列、推移、変化、トレンド
+                        elif any(word in query_input for word in ["時系列", "推移", "変化", "折れ線"]) or any(word in query_lower for word in ["trend", "line"]):
+                            fig = px.line(result_df, x=result_df.columns[0], y=result_df.columns[1])
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                        # 散布図: 関係、相関、散布
+                        elif any(word in query_input for word in ["関係", "相関", "散布"]) or any(word in query_lower for word in ["scatter", "correlation"]):
+                            if len(result_df.columns) >= 2:
+                                fig = px.scatter(result_df, x=result_df.columns[0], y=result_df.columns[1])
+                                st.plotly_chart(fig, use_container_width=True)
+                            
+                        # 棒グラフ（デフォルト）: 棒、ランキング、上位、下位
+                        else:
+                            # データを降順にソート（値の列で）
+                            if len(result_df) > 0:
+                                result_df_sorted = result_df.sort_values(by=result_df.columns[1], ascending=False)
+                            else:
+                                result_df_sorted = result_df
+                            fig = px.bar(result_df_sorted, x=result_df_sorted.columns[0], y=result_df_sorted.columns[1])
                             st.plotly_chart(fig, use_container_width=True)
                 
                 except Exception as e:
