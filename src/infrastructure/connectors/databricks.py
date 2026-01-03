@@ -52,31 +52,37 @@ class DatabricksConnector(BaseConnector):
     def list_tables(self, dataset: str, schema: str = None) -> List[str]:
         """指定カタログ・スキーマ内のテーブルリストを取得"""
         self._ensure_connected()
+        
+        # カタログを設定
         self.cursor.execute(f"USE CATALOG {dataset}")
         
+        # スキーマを設定（Databricksでは必須）
         if schema:
             self.cursor.execute(f"USE SCHEMA {schema}")
         else:
             # スキーマが指定されていない場合は、defaultスキーマを使用
             self.cursor.execute("USE SCHEMA default")
         
+        # 現在のカタログ・スキーマのテーブルを取得
         self.cursor.execute("SHOW TABLES")
         tables = self.cursor.fetchall()
+        
+        # デバッグ: テーブル情報を確認
+        print(f"DEBUG - SHOW TABLES result: {tables[:3] if tables else 'No tables'}")
+        
         return [table[1] for table in tables]  # table_name列を取得
     
     def get_sample_data(self, dataset: str, table: str, schema: str = None, limit: int = 1000) -> pd.DataFrame:
         """サンプルデータを取得"""
         self._ensure_connected()
         
-        # デバッグ: パラメータを出力
-        print(f"DEBUG - dataset: {dataset}, table: {table}, schema: {schema}")
-        
         if schema:
+            # 3層構造: catalog.schema.table
             query = f"SELECT * FROM {dataset}.{schema}.{table} LIMIT {limit}"
         else:
+            # スキーマが指定されていない場合、デフォルトスキーマを使用
             query = f"SELECT * FROM {dataset}.default.{table} LIMIT {limit}"
         
-        print(f"DEBUG - Query: {query}")
         self.cursor.execute(query)
         
         # カラム名を取得
