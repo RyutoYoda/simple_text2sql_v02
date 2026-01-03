@@ -22,11 +22,11 @@ class BaseConnector(DataSourceConnector):
         """継承先で実装"""
         raise NotImplementedError
     
-    def get_sample_data(self, dataset: str, table: str, limit: int = 1000) -> pd.DataFrame:
+    def get_sample_data(self, dataset: str, table: str, schema: str = None, limit: int = 1000) -> pd.DataFrame:
         """継承先で実装"""
         raise NotImplementedError
     
-    def get_table_schema(self, dataset: str, table: str) -> Dict[str, str]:
+    def get_table_schema(self, dataset: str, table: str, schema: str = None) -> Dict[str, str]:
         """継承先で実装"""
         raise NotImplementedError
     

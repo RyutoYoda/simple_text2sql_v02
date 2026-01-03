@@ -67,10 +67,16 @@ class DatabricksConnector(BaseConnector):
     def get_sample_data(self, dataset: str, table: str, schema: str = None, limit: int = 1000) -> pd.DataFrame:
         """サンプルデータを取得"""
         self._ensure_connected()
+        
+        # デバッグ: パラメータを出力
+        print(f"DEBUG - dataset: {dataset}, table: {table}, schema: {schema}")
+        
         if schema:
             query = f"SELECT * FROM {dataset}.{schema}.{table} LIMIT {limit}"
         else:
             query = f"SELECT * FROM {dataset}.default.{table} LIMIT {limit}"
+        
+        print(f"DEBUG - Query: {query}")
         self.cursor.execute(query)
         
         # カラム名を取得

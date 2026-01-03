@@ -257,7 +257,7 @@ with st.sidebar:
                                 
                                 if st.button("📥 データ取得", key="db_fetch"):
                                     with st.spinner("データ取得中..."):
-                                        st.session_state.df = connector.get_sample_data(selected_catalog, selected_table, selected_schema)
+                                        st.session_state.df = connector.get_sample_data(selected_catalog, selected_table, schema=selected_schema)
                                         st.success(f"✅ {len(st.session_state.df)}行のデータを取得")
                     else:
                         tables = connector.list_tables(selected_catalog)
