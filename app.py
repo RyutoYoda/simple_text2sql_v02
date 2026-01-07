@@ -63,7 +63,7 @@ with st.sidebar:
     st.divider()
     
     # 各データソースの接続設定
-    if source == "ローカルファイル":
+    if source == "ローカルファイル📁":
         uploaded_file = st.file_uploader(
             "ファイルをアップロード",
             type=["csv", "parquet"],
@@ -80,7 +80,7 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"読み込みエラー: {e}")
     
-    elif source == "BigQuery":
+    elif source == "BigQuery🔍":
         with st.expander("接続設定", expanded=True):
             sa_file = st.file_uploader(
                 "サービスアカウントJSON",
@@ -129,7 +129,7 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"エラー: {e}")
     
-    elif source == "Snowflake" and USE_NEW_CONNECTORS:
+    elif source == "Snowflake❄️" and USE_NEW_CONNECTORS:
         with st.expander("接続設定", expanded=True):
             account = st.text_input("アカウント", placeholder="xxx.snowflakecomputing.com")
             username = st.text_input("ユーザー名")
@@ -272,6 +272,54 @@ with st.sidebar:
                                 with st.spinner("データ取得中..."):
                                     st.session_state.df = connector.get_sample_data(selected_catalog, selected_table)
                                     st.success(f"✅ {len(st.session_state.df)}行のデータを取得")
+            except Exception as e:
+                st.error(f"エラー: {e}")
+    
+    elif source == "Googleスプレッドシート🟩" and USE_NEW_CONNECTORS:
+        with st.expander("接続設定", expanded=True):
+            sa_file = st.file_uploader(
+                "サービスアカウントJSON",
+                type="json",
+                key="gs_sa",
+                help="Google SheetsAPIアクセス用のサービスアカウントJSONファイル"
+            )
+            sheet_url = st.text_input("スプレッドシートURL", placeholder="https://docs.google.com/spreadsheets/d/...")
+            
+            if st.button("🔗 Googleスプレッドシートに接続", key="gs_connect"):
+                if all([sa_file, sheet_url]):
+                    try:
+                        # 一時ファイル保存
+                        with open("temp_gs.json", "wb") as f:
+                            f.write(sa_file.getbuffer())
+                        
+                        connector = ConnectorFactory.create_connector("google_sheets")
+                        credentials = {
+                            "service_account_file": "temp_gs.json",
+                            "sheet_url": sheet_url
+                        }
+                        
+                        with st.spinner("接続中..."):
+                            connector.connect(credentials)
+                            st.session_state.connector = connector
+                            st.session_state.connected = True
+                            st.success("✅ 接続成功！")
+                    except Exception as e:
+                        st.error(f"接続エラー: {e}")
+                else:
+                    st.warning("すべての必須項目を入力してください")
+        
+        # 接続後のデータ選択
+        if st.session_state.connected and st.session_state.connector:
+            try:
+                connector = st.session_state.connector
+                sheets = connector.list_tables("")  # Google Sheetsではdatasetパラメータ不要
+                selected_sheet = st.selectbox("シート", sheets)
+                
+                if selected_sheet:
+                    if st.button("📥 データ取得", key="gs_fetch"):
+                        with st.spinner("データ取得中..."):
+                            st.session_state.df = connector.get_sample_data("", selected_sheet)
+                            st.success(f"✅ {len(st.session_state.df)}行のデータを取得")
             except Exception as e:
                 st.error(f"エラー: {e}")
 
