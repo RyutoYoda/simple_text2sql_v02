@@ -501,28 +501,74 @@ if st.session_state.df is not None:
                         result_df = duck_conn.execute(sql_query).fetchdf()
                     
                     # 結果表示
-                    st.subheader("📊 結果")
+                    st.subheader("結果")
+                    
+                    # 結果をセッション状態に保存（レポート生成用）
+                    st.session_state.last_query_result = {
+                        "query": query_input,
+                        "sql": sql_query,
+                        "result_df": result_df,
+                        "timestamp": pd.Timestamp.now()
+                    }
+                    
                     st.dataframe(result_df)
                     
+                    # 分析要約の生成
+                    with st.spinner("分析結果を要約中..."):
+                        summary_prompt = f"""
+以下の分析結果を要約してください：
+
+ユーザーの質問: {query_input}
+実行したSQL: {sql_query}
+
+結果データ（上位10行）:
+{result_df.head(10).to_string()}
+
+以下の形式で要約してください：
+1. 主な発見（2-3個の重要なポイント）
+2. データの傾向や特徴
+3. ビジネス上の示唆（あれば）
+
+簡潔で分かりやすい日本語で記述してください。
+"""
+                        try:
+                            summary_response = client.chat.completions.create(
+                                model="gpt-3.5-turbo",
+                                messages=[
+                                    {"role": "system", "content": "あなたはデータ分析の専門家です。"},
+                                    {"role": "user", "content": summary_prompt}
+                                ]
+                            )
+                            analysis_summary = summary_response.choices[0].message.content.strip()
+                            st.session_state.last_query_result["summary"] = analysis_summary
+                            
+                            # 要約を表示
+                            with st.expander("分析要約", expanded=True):
+                                st.markdown(analysis_summary)
+                        except Exception as e:
+                            st.warning(f"要約生成エラー: {e}")
+                            st.session_state.last_query_result["summary"] = "要約を生成できませんでした。"
+                    
                     # グラフ生成の判定と作成
+                    fig = None
                     if len(result_df.columns) >= 2:
                         # グラフタイプを推定
                         query_lower = query_input.lower()
                         
                         # 円グラフ: 円、割合、比率、構成
                         if any(word in query_input for word in ["円", "割合", "比率", "構成", "内訳"]) or "pie" in query_lower:
-                            fig = px.pie(result_df, names=result_df.columns[0], values=result_df.columns[1])
+                            fig = px.pie(result_df, names=result_df.columns[0], values=result_df.columns[1], title=query_input)
                             st.plotly_chart(fig, use_container_width=True)
                             
                         # 折れ線グラフ: 時系列、推移、変化、トレンド
                         elif any(word in query_input for word in ["時系列", "推移", "変化", "折れ線"]) or any(word in query_lower for word in ["trend", "line"]):
-                            fig = px.line(result_df, x=result_df.columns[0], y=result_df.columns[1])
+                            fig = px.line(result_df, x=result_df.columns[0], y=result_df.columns[1], title=query_input)
                             st.plotly_chart(fig, use_container_width=True)
                             
                         # 散布図: 関係、相関、散布
                         elif any(word in query_input for word in ["関係", "相関", "散布"]) or any(word in query_lower for word in ["scatter", "correlation"]):
                             if len(result_df.columns) >= 2:
-                                fig = px.scatter(result_df, x=result_df.columns[0], y=result_df.columns[1])
+                                fig = px.scatter(result_df, x=result_df.columns[0], y=result_df.columns[1], title=query_input)
                                 st.plotly_chart(fig, use_container_width=True)
                             
                         # 棒グラフ（デフォルト）: 棒、ランキング、上位、下位
@@ -532,8 +578,76 @@ if st.session_state.df is not None:
                                 result_df_sorted = result_df.sort_values(by=result_df.columns[1], ascending=False)
                             else:
                                 result_df_sorted = result_df
-                            fig = px.bar(result_df_sorted, x=result_df_sorted.columns[0], y=result_df_sorted.columns[1])
+                            fig = px.bar(result_df_sorted, x=result_df_sorted.columns[0], y=result_df_sorted.columns[1], title=query_input)
                             st.plotly_chart(fig, use_container_width=True)
+                        
+                        # グラフをセッション状態に保存
+                        if fig:
+                            st.session_state.last_query_result["figure"] = fig
+                    
+                    # レポート共有セクション
+                    if "last_query_result" in st.session_state:
+                        st.divider()
+                        st.subheader("レポート共有")
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            if st.button("HTMLレポートをダウンロード", use_container_width=True):
+                                # HTMLレポート生成
+                                html_report = f"""
+                                <html>
+                                <head>
+                                    <title>Vizzy分析レポート - {st.session_state.last_query_result['timestamp'].strftime('%Y/%m/%d %H:%M')}</title>
+                                    <style>
+                                        body {{ font-family: Arial, sans-serif; margin: 40px; }}
+                                        h1, h2 {{ color: #333; }}
+                                        .query {{ background-color: #f0f0f0; padding: 10px; border-radius: 5px; }}
+                                        .sql {{ background-color: #e8e8e8; padding: 10px; border-radius: 5px; font-family: monospace; white-space: pre-wrap; }}
+                                        .summary {{ background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0; }}
+                                        table {{ border-collapse: collapse; width: 100%; }}
+                                        th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                                        th {{ background-color: #4CAF50; color: white; }}
+                                    </style>
+                                </head>
+                                <body>
+                                    <h1>Vizzy 分析レポート</h1>
+                                    <p><strong>作成日時:</strong> {st.session_state.last_query_result['timestamp'].strftime('%Y年%m月%d日 %H:%M:%S')}</p>
+                                    
+                                    <h2>質問</h2>
+                                    <div class="query">{st.session_state.last_query_result['query']}</div>
+                                    
+                                    <h2>実行したSQL</h2>
+                                    <div class="sql">{st.session_state.last_query_result['sql']}</div>
+                                    
+                                    <h2>分析要約</h2>
+                                    <div class="summary">{st.session_state.last_query_result.get('summary', '要約なし')}</div>
+                                    
+                                    <h2>グラフ</h2>
+                                    {st.session_state.last_query_result.get('figure', '').to_html() if 'figure' in st.session_state.last_query_result else '<p>グラフなし</p>'}
+                                    
+                                    <h2>データ（上位20行）</h2>
+                                    {st.session_state.last_query_result['result_df'].head(20).to_html()}
+                                </body>
+                                </html>
+                                """
+                                
+                                st.download_button(
+                                    label="ダウンロード",
+                                    data=html_report,
+                                    file_name=f"vizzy_report_{st.session_state.last_query_result['timestamp'].strftime('%Y%m%d_%H%M%S')}.html",
+                                    mime="text/html"
+                                )
+                        
+                        with col2:
+                            if st.button("CSVデータをダウンロード", use_container_width=True):
+                                csv = st.session_state.last_query_result['result_df'].to_csv(index=False)
+                                st.download_button(
+                                    label="ダウンロード",
+                                    data=csv,
+                                    file_name=f"vizzy_data_{st.session_state.last_query_result['timestamp'].strftime('%Y%m%d_%H%M%S')}.csv",
+                                    mime="text/csv"
+                                )
                 
                 except Exception as e:
                     st.error(f"SQLエラー: {e}")
@@ -545,7 +659,7 @@ if st.session_state.df is not None:
 
 else:
     # データ未ロード時の案内
-    st.info("👈 左のサイドバーからデータソースを選択してください")
+    st.info("左のサイドバーからデータソースを選択してください")
     
     with st.expander("使い方", expanded=True):
         st.markdown("""
