@@ -555,20 +555,46 @@ if st.session_state.df is not None:
                         # グラフタイプを推定
                         query_lower = query_input.lower()
                         
+                        # Plotlyのカラーパレットを設定（より見やすい色）
+                        colors = ['#4361ee', '#3f37c9', '#7209b7', '#b5179e', '#f72585', 
+                                 '#4cc9f0', '#4895ef', '#480ca8', '#560bad', '#6a4c93']
+                        
                         # 円グラフ: 円、割合、比率、構成
                         if any(word in query_input for word in ["円", "割合", "比率", "構成", "内訳"]) or "pie" in query_lower:
-                            fig = px.pie(result_df, names=result_df.columns[0], values=result_df.columns[1], title=query_input)
+                            fig = px.pie(result_df, names=result_df.columns[0], values=result_df.columns[1], 
+                                       title=query_input, color_discrete_sequence=colors)
+                            fig.update_layout(
+                                plot_bgcolor='white',
+                                paper_bgcolor='white',
+                                font=dict(color='#333333')
+                            )
                             st.plotly_chart(fig, use_container_width=True)
                             
                         # 折れ線グラフ: 時系列、推移、変化、トレンド
                         elif any(word in query_input for word in ["時系列", "推移", "変化", "折れ線"]) or any(word in query_lower for word in ["trend", "line"]):
-                            fig = px.line(result_df, x=result_df.columns[0], y=result_df.columns[1], title=query_input)
+                            fig = px.line(result_df, x=result_df.columns[0], y=result_df.columns[1], 
+                                        title=query_input, color_discrete_sequence=['#4361ee'])
+                            fig.update_layout(
+                                plot_bgcolor='white',
+                                paper_bgcolor='white',
+                                font=dict(color='#333333'),
+                                xaxis=dict(gridcolor='#e0e0e0'),
+                                yaxis=dict(gridcolor='#e0e0e0')
+                            )
                             st.plotly_chart(fig, use_container_width=True)
                             
                         # 散布図: 関係、相関、散布
                         elif any(word in query_input for word in ["関係", "相関", "散布"]) or any(word in query_lower for word in ["scatter", "correlation"]):
                             if len(result_df.columns) >= 2:
-                                fig = px.scatter(result_df, x=result_df.columns[0], y=result_df.columns[1], title=query_input)
+                                fig = px.scatter(result_df, x=result_df.columns[0], y=result_df.columns[1], 
+                                               title=query_input, color_discrete_sequence=['#4361ee'])
+                                fig.update_layout(
+                                    plot_bgcolor='white',
+                                    paper_bgcolor='white',
+                                    font=dict(color='#333333'),
+                                    xaxis=dict(gridcolor='#e0e0e0'),
+                                    yaxis=dict(gridcolor='#e0e0e0')
+                                )
                                 st.plotly_chart(fig, use_container_width=True)
                             
                         # 棒グラフ（デフォルト）: 棒、ランキング、上位、下位
@@ -578,7 +604,15 @@ if st.session_state.df is not None:
                                 result_df_sorted = result_df.sort_values(by=result_df.columns[1], ascending=False)
                             else:
                                 result_df_sorted = result_df
-                            fig = px.bar(result_df_sorted, x=result_df_sorted.columns[0], y=result_df_sorted.columns[1], title=query_input)
+                            fig = px.bar(result_df_sorted, x=result_df_sorted.columns[0], y=result_df_sorted.columns[1], 
+                                       title=query_input, color_discrete_sequence=['#4361ee'])
+                            fig.update_layout(
+                                plot_bgcolor='white',
+                                paper_bgcolor='white',
+                                font=dict(color='#333333'),
+                                xaxis=dict(gridcolor='#e0e0e0'),
+                                yaxis=dict(gridcolor='#e0e0e0')
+                            )
                             st.plotly_chart(fig, use_container_width=True)
                         
                         # グラフをセッション状態に保存
