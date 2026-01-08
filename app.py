@@ -331,7 +331,7 @@ if st.session_state.df is not None:
     df = st.session_state.df
     
     # データプレビュー
-    with st.expander("📊 データプレビュー", expanded=True):
+    with st.expander("データプレビュー", expanded=True):
         st.write(f"データサイズ: {len(df):,}行 × {len(df.columns)}列")
         st.dataframe(df.head(100))
     
@@ -368,7 +368,7 @@ if st.session_state.df is not None:
     with col2:
         st.write("")
         st.write("")
-        analyze_button = st.button("🔍 分析実行", type="primary", use_container_width=True)
+        analyze_button = st.button("分析実行", type="primary", use_container_width=True)
     
     if analyze_button and query_input:
         openai_api_key = st.secrets.get("OPENAI_API_KEY")
@@ -585,69 +585,6 @@ if st.session_state.df is not None:
                         if fig:
                             st.session_state.last_query_result["figure"] = fig
                     
-                    # レポート共有セクション
-                    if "last_query_result" in st.session_state:
-                        st.divider()
-                        st.subheader("レポート共有")
-                        
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            if st.button("HTMLレポートをダウンロード", use_container_width=True):
-                                # HTMLレポート生成
-                                html_report = f"""
-                                <html>
-                                <head>
-                                    <title>Vizzy分析レポート - {st.session_state.last_query_result['timestamp'].strftime('%Y/%m/%d %H:%M')}</title>
-                                    <style>
-                                        body {{ font-family: Arial, sans-serif; margin: 40px; }}
-                                        h1, h2 {{ color: #333; }}
-                                        .query {{ background-color: #f0f0f0; padding: 10px; border-radius: 5px; }}
-                                        .sql {{ background-color: #e8e8e8; padding: 10px; border-radius: 5px; font-family: monospace; white-space: pre-wrap; }}
-                                        .summary {{ background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0; }}
-                                        table {{ border-collapse: collapse; width: 100%; }}
-                                        th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                                        th {{ background-color: #4CAF50; color: white; }}
-                                    </style>
-                                </head>
-                                <body>
-                                    <h1>Vizzy 分析レポート</h1>
-                                    <p><strong>作成日時:</strong> {st.session_state.last_query_result['timestamp'].strftime('%Y年%m月%d日 %H:%M:%S')}</p>
-                                    
-                                    <h2>質問</h2>
-                                    <div class="query">{st.session_state.last_query_result['query']}</div>
-                                    
-                                    <h2>実行したSQL</h2>
-                                    <div class="sql">{st.session_state.last_query_result['sql']}</div>
-                                    
-                                    <h2>分析要約</h2>
-                                    <div class="summary">{st.session_state.last_query_result.get('summary', '要約なし')}</div>
-                                    
-                                    <h2>グラフ</h2>
-                                    {st.session_state.last_query_result.get('figure', '').to_html() if 'figure' in st.session_state.last_query_result else '<p>グラフなし</p>'}
-                                    
-                                    <h2>データ（上位20行）</h2>
-                                    {st.session_state.last_query_result['result_df'].head(20).to_html()}
-                                </body>
-                                </html>
-                                """
-                                
-                                st.download_button(
-                                    label="ダウンロード",
-                                    data=html_report,
-                                    file_name=f"vizzy_report_{st.session_state.last_query_result['timestamp'].strftime('%Y%m%d_%H%M%S')}.html",
-                                    mime="text/html"
-                                )
-                        
-                        with col2:
-                            if st.button("CSVデータをダウンロード", use_container_width=True):
-                                csv = st.session_state.last_query_result['result_df'].to_csv(index=False)
-                                st.download_button(
-                                    label="ダウンロード",
-                                    data=csv,
-                                    file_name=f"vizzy_data_{st.session_state.last_query_result['timestamp'].strftime('%Y%m%d_%H%M%S')}.csv",
-                                    mime="text/csv"
-                                )
                 
                 except Exception as e:
                     st.error(f"SQLエラー: {e}")
@@ -656,6 +593,70 @@ if st.session_state.df is not None:
                 st.error(f"AI生成エラー: {e}")
         else:
             st.warning("OpenAI APIキーを入力してください")
+    
+    # レポート共有セクション（分析実行ボタンの外側に配置）
+    if "last_query_result" in st.session_state:
+        st.divider()
+        st.subheader("レポート共有")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # HTMLレポート生成
+            html_report = f"""
+            <html>
+            <head>
+                <title>Vizzy分析レポート - {st.session_state.last_query_result['timestamp'].strftime('%Y/%m/%d %H:%M')}</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; margin: 40px; }}
+                    h1, h2 {{ color: #333; }}
+                    .query {{ background-color: #f0f0f0; padding: 10px; border-radius: 5px; }}
+                    .sql {{ background-color: #e8e8e8; padding: 10px; border-radius: 5px; font-family: monospace; white-space: pre-wrap; }}
+                    .summary {{ background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0; }}
+                    table {{ border-collapse: collapse; width: 100%; }}
+                    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                    th {{ background-color: #4CAF50; color: white; }}
+                </style>
+            </head>
+            <body>
+                <h1>Vizzy 分析レポート</h1>
+                <p><strong>作成日時:</strong> {st.session_state.last_query_result['timestamp'].strftime('%Y年%m月%d日 %H:%M:%S')}</p>
+                
+                <h2>質問</h2>
+                <div class="query">{st.session_state.last_query_result['query']}</div>
+                
+                <h2>実行したSQL</h2>
+                <div class="sql">{st.session_state.last_query_result['sql']}</div>
+                
+                <h2>分析要約</h2>
+                <div class="summary">{st.session_state.last_query_result.get('summary', '要約なし')}</div>
+                
+                <h2>グラフ</h2>
+                {st.session_state.last_query_result.get('figure', '').to_html() if 'figure' in st.session_state.last_query_result else '<p>グラフなし</p>'}
+                
+                <h2>データ（上位20行）</h2>
+                {st.session_state.last_query_result['result_df'].head(20).to_html()}
+            </body>
+            </html>
+            """
+            
+            st.download_button(
+                label="HTMLレポートをダウンロード",
+                data=html_report,
+                file_name=f"vizzy_report_{st.session_state.last_query_result['timestamp'].strftime('%Y%m%d_%H%M%S')}.html",
+                mime="text/html",
+                key="download_html"
+            )
+        
+        with col2:
+            csv = st.session_state.last_query_result['result_df'].to_csv(index=False)
+            st.download_button(
+                label="CSVデータをダウンロード",
+                data=csv,
+                file_name=f"vizzy_data_{st.session_state.last_query_result['timestamp'].strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                key="download_csv"
+            )
 
 else:
     # データ未ロード時の案内
