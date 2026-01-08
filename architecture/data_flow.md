@@ -89,10 +89,12 @@ graph LR
         NL --> Dialect{SQL方言判定}
         Dialect -->|Snowflake| SnowflakePrompt[Snowflake<br/>プロンプト]
         Dialect -->|BigQuery| BigQueryPrompt[BigQuery<br/>プロンプト]
+        Dialect -->|Databricks| DatabricksPrompt[Databricks<br/>プロンプト]
         Dialect -->|DuckDB| DuckDBPrompt[DuckDB<br/>プロンプト]
         
-        SnowflakePrompt --> GPT[GPT-3.5]
+        SnowflakePrompt --> GPT[GPT-3.5-turbo]
         BigQueryPrompt --> GPT
+        DatabricksPrompt --> GPT
         DuckDBPrompt --> GPT
         
         GPT --> SQL[生成されたSQL]
