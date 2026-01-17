@@ -32,3 +32,9 @@ Thumbs.db
 credentials/
 secrets/
 *.json.credentials
+
+# LT/Presentation files
+LT_slide.md
+
+# Backup files
+app_old.py

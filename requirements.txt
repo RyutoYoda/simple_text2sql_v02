@@ -4,6 +4,7 @@ plotly
 duckdb
 openai>=1.0.0
 numpy
+python-dotenv
 
 db-dtypes
 gspread 

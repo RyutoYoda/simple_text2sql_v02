@@ -15,6 +15,10 @@ from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 import warnings
 warnings.filterwarnings('ignore')
+from dotenv import load_dotenv
+
+# .envファイルから環境変数を読み込み
+load_dotenv()
 
 # 新しいコネクタシステムのインポート
 try:
@@ -33,6 +37,8 @@ if 'connected' not in st.session_state:
     st.session_state.connected = False
 if 'connector' not in st.session_state:
     st.session_state.connector = None
+if 'messages' not in st.session_state:
+    st.session_state.messages = []
 
 # サイドバー
 with st.sidebar:
@@ -329,12 +335,7 @@ st.title("🧞 Vizzy - Adhoc Analytics Assistant")
 # データがロードされているかチェック
 if st.session_state.df is not None:
     df = st.session_state.df
-    
-    # データプレビュー
-    with st.expander("データプレビュー", expanded=True):
-        st.write(f"データサイズ: {len(df):,}行 × {len(df.columns)}列")
-        st.dataframe(df.head(100))
-    
+
     # 日付カラムの自動変換
     for col in df.columns:
         if "date" in col.lower() or "time" in col.lower():
@@ -342,9 +343,6 @@ if st.session_state.df is not None:
                 df[col] = pd.to_datetime(df[col])
             except:
                 pass
-    
-    # Text2SQL機能
-    st.header("自然言語でデータを探索")
     
     # データソースの種類を判定
     if hasattr(st.session_state, 'connector') and st.session_state.connector:
@@ -355,47 +353,129 @@ if st.session_state.df is not None:
         dialect = 'duckdb'
         duck_conn = duckdb.connect()
         duck_conn.register("data", df)
-    
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        query_input = st.text_area(
-            "質問を入力してください",
-            placeholder="例: 売上の月別推移を見せて、上位10商品の売上を棒グラフで表示して",
-            height=100
-        )
-    
-    with col2:
-        st.write("")
-        st.write("")
-        analyze_button = st.button("分析実行", type="primary", use_container_width=True)
-    
-    if analyze_button and query_input:
-        openai_api_key = st.secrets.get("OPENAI_API_KEY")
-        if not openai_api_key:
-            openai_api_key = st.text_input("OpenAI APIキーを入力", type="password")
-        
-        if openai_api_key:
-            client = OpenAI(api_key=openai_api_key)
+
+    # カラム分割: 左にデータプレビュー、右にチャット
+    col_left, col_right = st.columns([1, 2])
+
+    with col_left:
+        st.subheader("📊 データプレビュー")
+        st.write(f"データサイズ: {len(df):,}行 × {len(df.columns)}列")
+        st.dataframe(df.head(100), height=600)
+
+    with col_right:
+        st.subheader("💬 データ分析チャット")
+
+        # チャット履歴を表示
+        for idx, message in enumerate(st.session_state.messages):
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+                # アシスタントのメッセージにデータとグラフを表示
+                if message["role"] == "assistant" and "data" in message:
+                    if "sql" in message:
+                        with st.expander("生成されたSQL"):
+                            st.code(message["sql"], language="sql")
+                    if "dataframe" in message:
+                        st.dataframe(message["dataframe"])
+                    if "figure" in message:
+                        st.plotly_chart(message["figure"], width="stretch")
+                    if "summary" in message:
+                        with st.expander("分析要約", expanded=True):
+                            st.markdown(message["summary"])
+
+                    # ダウンロードボタン
+                    if "dataframe" in message and "timestamp" in message:
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            # HTMLレポート生成
+                            html_report = f"""
+                            <html>
+                            <head>
+                                <title>Vizzy分析レポート - {message['timestamp'].strftime('%Y/%m/%d %H:%M')}</title>
+                                <style>
+                                    body {{ font-family: Arial, sans-serif; margin: 40px; }}
+                                    h1, h2 {{ color: #333; }}
+                                    .query {{ background-color: #f0f0f0; padding: 10px; border-radius: 5px; }}
+                                    .sql {{ background-color: #e8e8e8; padding: 10px; border-radius: 5px; font-family: monospace; white-space: pre-wrap; }}
+                                    .summary {{ background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0; }}
+                                    table {{ border-collapse: collapse; width: 100%; }}
+                                    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                                    th {{ background-color: #4CAF50; color: white; }}
+                                </style>
+                            </head>
+                            <body>
+                                <h1>Vizzy 分析レポート</h1>
+                                <p><strong>作成日時:</strong> {message['timestamp'].strftime('%Y年%m月%d日 %H:%M:%S')}</p>
+
+                                <h2>質問</h2>
+                                <div class="query">{message.get('question', '')}</div>
+
+                                <h2>実行したSQL</h2>
+                                <div class="sql">{message.get('sql', '')}</div>
+
+                                <h2>分析要約</h2>
+                                <div class="summary">{message.get('summary', '要約なし')}</div>
+
+                                <h2>グラフ</h2>
+                                {message.get('figure', '').to_html() if 'figure' in message else '<p>グラフなし</p>'}
+
+                                <h2>データ（上位20行）</h2>
+                                {message['dataframe'].head(20).to_html()}
+                            </body>
+                            </html>
+                            """
+
+                            st.download_button(
+                                label="📄 HTMLレポート",
+                                data=html_report,
+                                file_name=f"vizzy_report_{message['timestamp'].strftime('%Y%m%d_%H%M%S')}.html",
+                                mime="text/html",
+                                key=f"html_{idx}"
+                            )
+
+                        with col2:
+                            csv = message['dataframe'].to_csv(index=False)
+                            st.download_button(
+                                label="📊 CSVデータ",
+                                data=csv,
+                                file_name=f"vizzy_data_{message['timestamp'].strftime('%Y%m%d_%H%M%S')}.csv",
+                                mime="text/csv",
+                                key=f"csv_{idx}"
+                            )
+
+        # チャット入力
+        if prompt := st.chat_input("質問を入力してください（例: 月別の売上推移を見せて）"):
+            # ユーザーメッセージを表示
+            with st.chat_message("user"):
+                st.markdown(prompt)
             
+            # ユーザーメッセージを履歴に追加
+            st.session_state.messages.append({"role": "user", "content": prompt})
+
+            # APIキー取得
+            openai_api_key = os.getenv("OPENAI_API_KEY")
+            if not openai_api_key:
+                st.error("OpenAI APIキーが設定されていません。.envファイルにOPENAI_API_KEYを設定してください。")
+                st.stop()
+
+            client = OpenAI(api_key=openai_api_key)
+
             # スキーマ情報取得
             schema = {}
             for col in df.columns:
                 dtype = str(df[col].dtype)
                 schema[col] = dtype
-            
+
             # サンプルデータ
             sample_data = df.head(3).to_string()
-            
+
             # SQL生成プロンプト（データベース別に最適化）
             if dialect == 'snowflake':
-                # Snowflake用のテーブル情報取得
                 if hasattr(st.session_state, 'selected_db') and hasattr(st.session_state, 'selected_schema') and hasattr(st.session_state, 'selected_table'):
                     table_ref = f"{st.session_state.selected_db}.{st.session_state.selected_schema}.{st.session_state.selected_table}"
                 else:
                     table_ref = "data"
-                    
-                prompt = f"""
+
+                sql_generation_prompt = f"""
 以下のテーブル情報を基に、ユーザーの質問に答えるSnowflake SQLクエリを生成してください。
 
 テーブル名: {table_ref}
@@ -404,7 +484,7 @@ if st.session_state.df is not None:
 サンプルデータ:
 {sample_data}
 
-ユーザーの質問: {query_input}
+ユーザーの質問: {prompt}
 
 重要な指示:
 - Snowflakeの構文を使用すること
@@ -414,7 +494,7 @@ if st.session_state.df is not None:
 - SQLクエリのみを返す（説明は不要）
 """
             elif dialect == 'bigquery':
-                prompt = f"""
+                sql_generation_prompt = f"""
 以下のテーブル情報を基に、ユーザーの質問に答えるBigQuery SQLクエリを生成してください。
 
 テーブル名: data
@@ -423,7 +503,7 @@ if st.session_state.df is not None:
 サンプルデータ:
 {sample_data}
 
-ユーザーの質問: {query_input}
+ユーザーの質問: {prompt}
 
 重要な指示:
 - BigQueryの標準SQL構文を使用すること
@@ -433,13 +513,12 @@ if st.session_state.df is not None:
 - SQLクエリのみを返す（説明は不要）
 """
             elif dialect == 'databricks':
-                # Databricks用のテーブル情報取得
                 if hasattr(st.session_state, 'selected_catalog') and hasattr(st.session_state, 'selected_schema') and hasattr(st.session_state, 'selected_table'):
                     table_ref = f"{st.session_state.selected_catalog}.{st.session_state.selected_schema}.{st.session_state.selected_table}"
                 else:
                     table_ref = "data"
-                    
-                prompt = f"""
+
+                sql_generation_prompt = f"""
 以下のテーブル情報を基に、ユーザーの質問に答えるDatabricks SQLクエリを生成してください。
 
 テーブル名: {table_ref}
@@ -448,7 +527,7 @@ if st.session_state.df is not None:
 サンプルデータ:
 {sample_data}
 
-ユーザーの質問: {query_input}
+ユーザーの質問: {prompt}
 
 重要な指示:
 - Databricksの構文を使用すること（Spark SQLベース）
@@ -458,7 +537,7 @@ if st.session_state.df is not None:
 - SQLクエリのみを返す（説明は不要）
 """
             else:  # DuckDB (デフォルト)
-                prompt = f"""
+                sql_generation_prompt = f"""
 以下のテーブル情報を基に、ユーザーの質問に答えるDuckDB SQLクエリを生成してください。
 
 テーフル名: data
@@ -467,7 +546,7 @@ if st.session_state.df is not None:
 サンプルデータ:
 {sample_data}
 
-ユーザーの質問: {query_input}
+ユーザーの質問: {prompt}
 
 重要な指示:
 - DuckDBの構文を使用すること
@@ -475,50 +554,40 @@ if st.session_state.df is not None:
 - グラフを要求された場合は、適切なGROUP BYとORDER BYを含める
 - SQLクエリのみを返す（説明は不要）
 """
-            
+
             try:
-                with st.spinner("SQL生成中..."):
-                    response = client.chat.completions.create(
-                        model="gpt-3.5-turbo",
-                        messages=[
-                            {"role": "system", "content": "あなたはSQL生成の専門家です。"},
-                            {"role": "user", "content": prompt}
-                        ]
-                    )
-                
-                sql_query = response.choices[0].message.content.strip()
-                sql_query = sql_query.replace("```sql", "").replace("```", "").strip()
-                
-                st.code(sql_query, language="sql")
-                
-                # クエリ実行（データソース別）
-                try:
-                    if dialect in ['snowflake', 'bigquery', 'databricks'] and hasattr(connector, 'execute_query'):
-                        # 外部データベースの場合は直接実行
-                        result_df = connector.execute_query(sql_query)
-                    else:
-                        # ローカルデータの場合はDuckDBで実行
-                        result_df = duck_conn.execute(sql_query).fetchdf()
-                    
-                    # 結果表示
-                    st.subheader("結果")
-                    
-                    # 結果をセッション状態に保存（レポート生成用）
-                    st.session_state.last_query_result = {
-                        "query": query_input,
-                        "sql": sql_query,
-                        "result_df": result_df,
-                        "timestamp": pd.Timestamp.now()
-                    }
-                    
-                    st.dataframe(result_df)
-                    
-                    # 分析要約の生成
-                    with st.spinner("分析結果を要約中..."):
-                        summary_prompt = f"""
+                with st.chat_message("assistant"):
+                    with st.spinner("SQL生成中..."):
+                        response = client.chat.completions.create(
+                            model="gpt-3.5-turbo",
+                            messages=[
+                                {"role": "system", "content": "あなたはSQL生成の専門家です。"},
+                                {"role": "user", "content": sql_generation_prompt}
+                            ]
+                        )
+
+                    sql_query = response.choices[0].message.content.strip()
+                    sql_query = sql_query.replace("```sql", "").replace("```", "").strip()
+
+                    with st.expander("生成されたSQL", expanded=False):
+                        st.code(sql_query, language="sql")
+
+                    # クエリ実行
+                    try:
+                        with st.spinner("クエリ実行中..."):
+                            if dialect in ['snowflake', 'bigquery', 'databricks'] and hasattr(connector, 'execute_query'):
+                                result_df = connector.execute_query(sql_query)
+                            else:
+                                result_df = duck_conn.execute(sql_query).fetchdf()
+
+                        st.dataframe(result_df)
+
+                        # 分析要約の生成
+                        with st.spinner("分析結果を要約中..."):
+                            summary_prompt = f"""
 以下の分析結果を要約してください：
 
-ユーザーの質問: {query_input}
+ユーザーの質問: {prompt}
 実行したSQL: {sql_query}
 
 結果データ（上位10行）:
@@ -531,171 +600,144 @@ if st.session_state.df is not None:
 
 簡潔で分かりやすい日本語で記述してください。
 """
-                        try:
-                            summary_response = client.chat.completions.create(
-                                model="gpt-3.5-turbo",
-                                messages=[
-                                    {"role": "system", "content": "あなたはデータ分析の専門家です。"},
-                                    {"role": "user", "content": summary_prompt}
-                                ]
-                            )
-                            analysis_summary = summary_response.choices[0].message.content.strip()
-                            st.session_state.last_query_result["summary"] = analysis_summary
-                            
-                            # 要約を表示
-                            with st.expander("分析要約", expanded=True):
-                                st.markdown(analysis_summary)
-                        except Exception as e:
-                            st.warning(f"要約生成エラー: {e}")
-                            st.session_state.last_query_result["summary"] = "要約を生成できませんでした。"
-                    
-                    # グラフ生成の判定と作成
-                    fig = None
-                    if len(result_df.columns) >= 2:
-                        # グラフタイプを推定
-                        query_lower = query_input.lower()
-                        
-                        # Plotlyのカラーパレットを設定（より見やすい色）
-                        colors = ['#4361ee', '#3f37c9', '#7209b7', '#b5179e', '#f72585', 
-                                 '#4cc9f0', '#4895ef', '#480ca8', '#560bad', '#6a4c93']
-                        
-                        # 円グラフ: 円、割合、比率、構成
-                        if any(word in query_input for word in ["円", "割合", "比率", "構成", "内訳"]) or "pie" in query_lower:
-                            fig = px.pie(result_df, names=result_df.columns[0], values=result_df.columns[1], 
-                                       title=query_input, color_discrete_sequence=colors)
-                            fig.update_layout(
-                                plot_bgcolor='white',
-                                paper_bgcolor='white',
-                                font=dict(color='#333333')
-                            )
-                            st.plotly_chart(fig, use_container_width=True)
-                            
-                        # 折れ線グラフ: 時系列、推移、変化、トレンド
-                        elif any(word in query_input for word in ["時系列", "推移", "変化", "折れ線"]) or any(word in query_lower for word in ["trend", "line"]):
-                            fig = px.line(result_df, x=result_df.columns[0], y=result_df.columns[1], 
-                                        title=query_input, color_discrete_sequence=['#4361ee'])
-                            fig.update_layout(
-                                plot_bgcolor='white',
-                                paper_bgcolor='white',
-                                font=dict(color='#333333'),
-                                xaxis=dict(gridcolor='#e0e0e0'),
-                                yaxis=dict(gridcolor='#e0e0e0')
-                            )
-                            st.plotly_chart(fig, use_container_width=True)
-                            
-                        # 散布図: 関係、相関、散布
-                        elif any(word in query_input for word in ["関係", "相関", "散布"]) or any(word in query_lower for word in ["scatter", "correlation"]):
-                            if len(result_df.columns) >= 2:
-                                fig = px.scatter(result_df, x=result_df.columns[0], y=result_df.columns[1], 
-                                               title=query_input, color_discrete_sequence=['#4361ee'])
-                                fig.update_layout(
-                                    plot_bgcolor='white',
-                                    paper_bgcolor='white',
-                                    font=dict(color='#333333'),
-                                    xaxis=dict(gridcolor='#e0e0e0'),
-                                    yaxis=dict(gridcolor='#e0e0e0')
+                            try:
+                                summary_response = client.chat.completions.create(
+                                    model="gpt-3.5-turbo",
+                                    messages=[
+                                        {"role": "system", "content": "あなたはデータ分析の専門家です。"},
+                                        {"role": "user", "content": summary_prompt}
+                                    ]
                                 )
-                                st.plotly_chart(fig, use_container_width=True)
-                            
-                        # 棒グラフ（デフォルト）: 棒、ランキング、上位、下位
-                        else:
-                            # データを降順にソート（値の列で）
-                            if len(result_df) > 0:
-                                result_df_sorted = result_df.sort_values(by=result_df.columns[1], ascending=False)
+                                analysis_summary = summary_response.choices[0].message.content.strip()
+
+                                with st.expander("分析要約", expanded=True):
+                                    st.markdown(analysis_summary)
+                            except Exception as e:
+                                st.warning(f"要約生成エラー: {e}")
+                                analysis_summary = "要約を生成できませんでした。"
+
+                        # グラフ生成
+                        fig = None
+                        if len(result_df.columns) >= 2:
+                            query_lower = prompt.lower()
+                            colors = ['#4361ee', '#3f37c9', '#7209b7', '#b5179e', '#f72585',
+                                     '#4cc9f0', '#4895ef', '#480ca8', '#560bad', '#6a4c93']
+
+                            if any(word in prompt for word in ["円", "割合", "比率", "構成", "内訳"]) or "pie" in query_lower:
+                                fig = px.pie(result_df, names=result_df.columns[0], values=result_df.columns[1],
+                                           title=prompt, color_discrete_sequence=colors)
+                                fig.update_layout(plot_bgcolor='white', paper_bgcolor='white', font=dict(color='#333333'))
+                                st.plotly_chart(fig, width="stretch")
+
+                            elif any(word in prompt for word in ["時系列", "推移", "変化", "折れ線"]) or any(word in query_lower for word in ["trend", "line"]):
+                                fig = px.line(result_df, x=result_df.columns[0], y=result_df.columns[1],
+                                            title=prompt, color_discrete_sequence=['#4361ee'])
+                                fig.update_layout(plot_bgcolor='white', paper_bgcolor='white', font=dict(color='#333333'),
+                                                xaxis=dict(gridcolor='#e0e0e0'), yaxis=dict(gridcolor='#e0e0e0'))
+                                st.plotly_chart(fig, width="stretch")
+
+                            elif any(word in prompt for word in ["関係", "相関", "散布"]) or any(word in query_lower for word in ["scatter", "correlation"]):
+                                fig = px.scatter(result_df, x=result_df.columns[0], y=result_df.columns[1],
+                                               title=prompt, color_discrete_sequence=['#4361ee'])
+                                fig.update_layout(plot_bgcolor='white', paper_bgcolor='white', font=dict(color='#333333'),
+                                                xaxis=dict(gridcolor='#e0e0e0'), yaxis=dict(gridcolor='#e0e0e0'))
+                                st.plotly_chart(fig, width="stretch")
+
                             else:
-                                result_df_sorted = result_df
-                            fig = px.bar(result_df_sorted, x=result_df_sorted.columns[0], y=result_df_sorted.columns[1], 
-                                       title=query_input, color_discrete_sequence=['#4361ee'])
-                            fig.update_layout(
-                                plot_bgcolor='white',
-                                paper_bgcolor='white',
-                                font=dict(color='#333333'),
-                                xaxis=dict(gridcolor='#e0e0e0'),
-                                yaxis=dict(gridcolor='#e0e0e0')
-                            )
-                            st.plotly_chart(fig, use_container_width=True)
-                        
-                        # グラフをセッション状態に保存
+                                if len(result_df) > 0:
+                                    result_df_sorted = result_df.sort_values(by=result_df.columns[1], ascending=False)
+                                else:
+                                    result_df_sorted = result_df
+                                fig = px.bar(result_df_sorted, x=result_df_sorted.columns[0], y=result_df_sorted.columns[1],
+                                           title=prompt, color_discrete_sequence=['#4361ee'])
+                                fig.update_layout(plot_bgcolor='white', paper_bgcolor='white', font=dict(color='#333333'),
+                                                xaxis=dict(gridcolor='#e0e0e0'), yaxis=dict(gridcolor='#e0e0e0'))
+                                st.plotly_chart(fig, width="stretch")
+
+                        # アシスタントメッセージを履歴に追加
+                        assistant_message = {
+                            "role": "assistant",
+                            "content": f"分析結果を表示しました。",
+                            "data": True,
+                            "sql": sql_query,
+                            "dataframe": result_df,
+                            "summary": analysis_summary,
+                            "question": prompt,
+                            "timestamp": pd.Timestamp.now()
+                        }
                         if fig:
-                            st.session_state.last_query_result["figure"] = fig
-                    
-                
-                except Exception as e:
-                    st.error(f"SQLエラー: {e}")
-            
+                            assistant_message["figure"] = fig
+                        st.session_state.messages.append(assistant_message)
+
+                        # 新しく生成された結果のダウンロードボタン
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            # HTMLレポート生成
+                            html_report = f"""
+                            <html>
+                            <head>
+                                <title>Vizzy分析レポート - {assistant_message['timestamp'].strftime('%Y/%m/%d %H:%M')}</title>
+                                <style>
+                                    body {{ font-family: Arial, sans-serif; margin: 40px; }}
+                                    h1, h2 {{ color: #333; }}
+                                    .query {{ background-color: #f0f0f0; padding: 10px; border-radius: 5px; }}
+                                    .sql {{ background-color: #e8e8e8; padding: 10px; border-radius: 5px; font-family: monospace; white-space: pre-wrap; }}
+                                    .summary {{ background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0; }}
+                                    table {{ border-collapse: collapse; width: 100%; }}
+                                    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                                    th {{ background-color: #4CAF50; color: white; }}
+                                </style>
+                            </head>
+                            <body>
+                                <h1>Vizzy 分析レポート</h1>
+                                <p><strong>作成日時:</strong> {assistant_message['timestamp'].strftime('%Y年%m月%d日 %H:%M:%S')}</p>
+
+                                <h2>質問</h2>
+                                <div class="query">{prompt}</div>
+
+                                <h2>実行したSQL</h2>
+                                <div class="sql">{sql_query}</div>
+
+                                <h2>分析要約</h2>
+                                <div class="summary">{analysis_summary}</div>
+
+                                <h2>グラフ</h2>
+                                {fig.to_html() if fig else '<p>グラフなし</p>'}
+
+                                <h2>データ（上位20行）</h2>
+                                {result_df.head(20).to_html()}
+                            </body>
+                            </html>
+                            """
+
+                            st.download_button(
+                                label="📄 HTMLレポート",
+                                data=html_report,
+                                file_name=f"vizzy_report_{assistant_message['timestamp'].strftime('%Y%m%d_%H%M%S')}.html",
+                                mime="text/html",
+                                key="html_new"
+                            )
+
+                        with col2:
+                            csv = result_df.to_csv(index=False)
+                            st.download_button(
+                                label="📊 CSVデータ",
+                                data=csv,
+                                file_name=f"vizzy_data_{assistant_message['timestamp'].strftime('%Y%m%d_%H%M%S')}.csv",
+                                mime="text/csv",
+                                key="csv_new"
+                            )
+
+                    except Exception as e:
+                        st.error(f"SQLエラー: {e}")
+
             except Exception as e:
                 st.error(f"AI生成エラー: {e}")
-        else:
-            st.warning("OpenAI APIキーを入力してください")
-    
-    # レポート共有セクション（分析実行ボタンの外側に配置）
-    if "last_query_result" in st.session_state:
-        st.divider()
-        st.subheader("レポート共有")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # HTMLレポート生成
-            html_report = f"""
-            <html>
-            <head>
-                <title>Vizzy分析レポート - {st.session_state.last_query_result['timestamp'].strftime('%Y/%m/%d %H:%M')}</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; margin: 40px; }}
-                    h1, h2 {{ color: #333; }}
-                    .query {{ background-color: #f0f0f0; padding: 10px; border-radius: 5px; }}
-                    .sql {{ background-color: #e8e8e8; padding: 10px; border-radius: 5px; font-family: monospace; white-space: pre-wrap; }}
-                    .summary {{ background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0; }}
-                    table {{ border-collapse: collapse; width: 100%; }}
-                    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                    th {{ background-color: #4CAF50; color: white; }}
-                </style>
-            </head>
-            <body>
-                <h1>Vizzy 分析レポート</h1>
-                <p><strong>作成日時:</strong> {st.session_state.last_query_result['timestamp'].strftime('%Y年%m月%d日 %H:%M:%S')}</p>
-                
-                <h2>質問</h2>
-                <div class="query">{st.session_state.last_query_result['query']}</div>
-                
-                <h2>実行したSQL</h2>
-                <div class="sql">{st.session_state.last_query_result['sql']}</div>
-                
-                <h2>分析要約</h2>
-                <div class="summary">{st.session_state.last_query_result.get('summary', '要約なし')}</div>
-                
-                <h2>グラフ</h2>
-                {st.session_state.last_query_result.get('figure', '').to_html() if 'figure' in st.session_state.last_query_result else '<p>グラフなし</p>'}
-                
-                <h2>データ（上位20行）</h2>
-                {st.session_state.last_query_result['result_df'].head(20).to_html()}
-            </body>
-            </html>
-            """
-            
-            st.download_button(
-                label="HTMLレポートをダウンロード",
-                data=html_report,
-                file_name=f"vizzy_report_{st.session_state.last_query_result['timestamp'].strftime('%Y%m%d_%H%M%S')}.html",
-                mime="text/html",
-                key="download_html"
-            )
-        
-        with col2:
-            csv = st.session_state.last_query_result['result_df'].to_csv(index=False)
-            st.download_button(
-                label="CSVデータをダウンロード",
-                data=csv,
-                file_name=f"vizzy_data_{st.session_state.last_query_result['timestamp'].strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
-                key="download_csv"
-            )
 
 else:
     # データ未ロード時の案内
     st.info("左のサイドバーからデータソースを選択してください")
-    
+
     with st.expander("使い方", expanded=True):
         st.markdown("""
 ### 🚀 クイックスタート
@@ -703,7 +745,7 @@ else:
 1. **データソースを選択**: サイドバーから利用するデータソースを選択
 2. **接続設定**: 必要な認証情報を入力して接続
 3. **データ取得**: テーブルを選択してデータを取得
-4. **自然言語で分析**: 質問を入力して分析を実行
+4. **自然言語で分析**: チャットで質問を入力して分析を実行
 
 ### 📊 対応データソース
 
