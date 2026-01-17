@@ -54,9 +54,18 @@ class BigQueryConnector(BaseConnector):
         self._ensure_connected()
         table_ref = self.connection.dataset(dataset).table(table)
         table = self.connection.get_table(table_ref)
-        
+
         schema = {}
         for field in table.schema:
             schema[field.name] = field.field_type
-        
+
         return schema
+
+    def execute_query(self, query: str) -> pd.DataFrame:
+        """SQLクエリを実行"""
+        self._ensure_connected()
+        return self.connection.query(query).to_dataframe()
+
+    def get_dialect(self) -> str:
+        """SQLダイアレクトを返す"""
+        return "bigquery"

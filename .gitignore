@@ -38,3 +38,4 @@ LT_slide.md
 
 # Backup files
 app_old.py
+app_backup_*.py
