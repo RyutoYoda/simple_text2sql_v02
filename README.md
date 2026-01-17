@@ -50,34 +50,6 @@
 - **アドホック分析**: その場で思いついた質問を即座にSQL化して実行
 - **安全な探索**: SELECT文のみ実行可能で、データの変更リスクなし
 
-## 使用技術
-
-### AIモデル
-- **SQL生成**: OpenAI GPT-3.5-turbo
-- **テキスト埋め込み**: text-embedding-ada-002
-- **クラスタリング**: FAISS + scikit-learn K-means
-
-### フレームワーク・ライブラリ
-- **UI**: Streamlit
-- **データ処理**: pandas, DuckDB
-- **可視化**: Plotly
-- **ベクトル検索**: FAISS
-
-## 対応データソース
-
-### クラウドデータウェアハウス
-- **[BigQuery](src/infrastructure/connectors/bigquery.py)**: Google Cloud BigQuery
-  - サービスアカウントJSON認証
-- **[Snowflake](src/infrastructure/connectors/snowflake.py)**: Snowflake Data Warehouse
-  - Programmatic Access Token (秘密鍵) 認証
-- **[Databricks](src/infrastructure/connectors/databricks.py)**: Databricks SQL Warehouse
-  - Personal Access Token (PAT) 認証
-
-### その他のデータソース
-- **[ローカルファイル](src/infrastructure/connectors/local_file.py)**: CSV, Parquet
-- **[Google Sheets](src/infrastructure/connectors/google_sheets.py)**: スプレッドシート
-  - サービスアカウントJSON認証
-
 ## アーキテクチャ
 
 クリーンアーキテクチャを採用し、拡張性と保守性を確保しています。
@@ -85,29 +57,17 @@
 ### ディレクトリ構造
 
 ```
-simple_text2sql_v02/
+vizzy-adhoc-analytics/
 ├── app.py                    # メインのStreamlitアプリケーション
 ├── requirements.txt          # 依存パッケージ
-├── README.md                # このファイル
+├── architecture/             # アーキテクチャドキュメント
+│   ├── data_flow.md         # データフロー図
+│   └── system_architecture.md # システムアーキテクチャ図
 └── src/
-    ├── domain/              # ドメイン層
-    │   └── interfaces.py    # DataSourceConnector インターフェース
-    └── infrastructure/      # インフラストラクチャ層
-        └── connectors/      # データベースコネクタ実装
-            ├── base.py      # 基底コネクタクラス
-            ├── factory.py   # コネクタファクトリー
-            ├── bigquery.py
-            ├── snowflake.py
-            ├── databricks.py
-            ├── local_file.py
-            └── google_sheets.py
+    ├── domain/              # ドメイン層（インターフェース定義）
+    └── infrastructure/      # インフラストラクチャ層（実装）
+        └── connectors/      # データソースコネクタ
 ```
-
-### 主要コンポーネント
-
-- **[DataSourceConnector インターフェース](src/domain/interfaces.py)**: すべてのコネクタが実装する共通インターフェース
-- **[BaseConnector](src/infrastructure/connectors/base.py)**: コネクタの基底実装
-- **[ConnectorFactory](src/infrastructure/connectors/factory.py)**: コネクタのファクトリーパターン実装
 
 ## クイックスタート
 
@@ -119,8 +79,8 @@ simple_text2sql_v02/
 
 ```bash
 # リポジトリのクローン
-git clone https://github.com/RyutoYoda/simple_text2sql_v02.git
-cd simple_text2sql_v02
+git clone https://github.com/RyutoYoda/vizzy-adhoc-analytics.git
+cd vizzy-adhoc-analytics
 
 # 依存関係のインストール
 pip install -r requirements.txt
@@ -132,55 +92,13 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## 使い方
+アプリ起動後、画面内の「使い方」セクションで詳しい使い方を確認できます。
 
-### データソースの追加
+## アーキテクチャ詳細
 
-1. **データソース種類を選択**: サイドバーの「新しいデータソースを追加」から選択
-2. **データソース名を入力**: わかりやすい名前をつける（例: "売上データ2024"）
-3. **認証情報入力**: 各データソースに必要な認証情報を入力
-4. **接続**: 接続ボタンでデータベースに接続
-5. **テーブル選択**: データセット/テーブルを選択
-6. **追加**: 「📥 追加」ボタンでデータソースを追加
-
-### 分析の実行
-
-1. **データソース切り替え**: サイドバーのドロップダウンから分析したいデータソースを選択
-2. **データプレビュー**: 左側でデータの内容を確認
-3. **チャットで質問**: 右側のチャット欄に自然言語で質問を入力
-4. **結果確認**: SQL、グラフ、分析要約が自動生成される
-5. **レポート保存**: HTMLレポートやCSVデータをダウンロード可能
-
-### 複数データソースの活用
-
-- 複数のデータソースを同時に接続
-- サイドバーで簡単に切り替え
-- 各データソースごとに独立したチャット履歴
-- 不要なデータソースは🗑️ボタンで削除
-
-### 質問例
-
-- 月別の売上推移を見せて
-- カテゴリ別の売上を棒グラフで表示
-- 上位10商品の売上割合を円グラフで
-- 昨年同月比の成長率を計算して
-
-## 各コネクタの設定方法
-
-### Snowflake
-1. Snowflakeアカウントで秘密鍵ペアを生成
-2. 公開鍵をユーザープロファイルに登録
-3. 秘密鍵（PEMファイル）をアップロード
-
-### Databricks
-1. Databricksワークスペースでアクセストークンを生成
-2. SQLウェアハウスのエンドポイント情報を取得
-3. トークンとエンドポイント情報を入力
-
-### BigQuery
-1. GCPコンソールでサービスアカウントを作成
-2. BigQuery権限を付与
-3. JSONキーをダウンロードしてアップロード
+詳細なアーキテクチャ図は以下を参照してください：
+- [データフロー図](architecture/data_flow.md)
+- [システムアーキテクチャ図](architecture/system_architecture.md)
 
 ## 開発者向け情報
 
@@ -213,34 +131,6 @@ class MyNewConnector(BaseConnector):
 - `get_table_schema(dataset: str, table: str) -> Dict[str, str]`: テーブルスキーマの取得
 - `close() -> None`: 接続のクローズ
 
-## 主要な依存関係
-
-```
-streamlit==1.29.0
-pandas==2.0.3
-plotly==5.18.0
-duckdb==0.9.2
-openai>=1.0.0
-numpy==1.24.3
-faiss-cpu==1.7.4
-scikit-learn==1.3.2
-google-cloud-bigquery==3.13.0
-snowflake-connector-python==3.5.0
-databricks-sql-connector==3.0.1
-gspread==5.12.0
-```
-
-## トラブルシューティング
-
-### 接続エラーが発生する場合
-- 認証情報が正しいか確認
-- ネットワーク接続を確認
-- 必要な権限が付与されているか確認
-
-### OpenAI APIエラー
-- APIキーが有効か確認
-- APIの利用制限に達していないか確認
-
 ## コントリビューション
 
-プルリクエストを歓迎します。新機能の提案やバグ報告は[Issues](https://github.com/RyutoYoda/simple_text2sql_v02/issues)へ。
+プルリクエストを歓迎します。新機能の提案やバグ報告は[Issues](https://github.com/RyutoYoda/vizzy-adhoc-analytics/issues)へ。
