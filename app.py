@@ -30,6 +30,44 @@ except ImportError as e:
 
 st.set_page_config(page_title="Vizzye", layout="wide", initial_sidebar_state="expanded")
 
+# SQLバリデーション関数
+def is_safe_query(sql: str) -> tuple[bool, str]:
+    """
+    SELECT文のみを許可するバリデーション
+
+    Returns:
+        (bool, str): (安全かどうか, エラーメッセージ)
+    """
+    sql_stripped = sql.strip()
+    if not sql_stripped:
+        return False, "SQLクエリが空です"
+
+    # 大文字に変換してチェック（コメントや文字列リテラルを考慮）
+    sql_upper = sql_stripped.upper()
+
+    # WITH句（CTE）をサポート
+    if sql_upper.startswith('WITH'):
+        # WITH句の場合、最終的なSELECTがあるかチェック
+        if 'SELECT' not in sql_upper:
+            return False, "WITH句の後にSELECT文が必要です"
+    elif not sql_upper.startswith('SELECT'):
+        return False, "SELECT文のみ実行可能です"
+
+    # 危険なキーワードをチェック
+    dangerous_keywords = [
+        'UPDATE', 'DELETE', 'DROP', 'INSERT', 'CREATE',
+        'ALTER', 'TRUNCATE', 'GRANT', 'REVOKE', 'EXEC',
+        'EXECUTE', 'MERGE', 'REPLACE'
+    ]
+
+    for keyword in dangerous_keywords:
+        # 単語境界を考慮（例: SELECT内の"UPDATE"は許可）
+        pattern = r'\b' + keyword + r'\b'
+        if re.search(pattern, sql_upper):
+            return False, f"危険なSQL操作が検出されました: {keyword}"
+
+    return True, ""
+
 # セッション状態の初期化
 if 'data_sources' not in st.session_state:
     st.session_state.data_sources = {}  # {データソース名: {type, df, connector, ...}}
@@ -693,6 +731,19 @@ if st.session_state.active_source and st.session_state.active_source in st.sessi
 
                     with st.expander("生成されたSQL", expanded=False):
                         st.code(sql_query, language="sql")
+
+                    # SQLバリデーション
+                    is_safe, error_message = is_safe_query(sql_query)
+                    if not is_safe:
+                        st.error(f"🚫 セキュリティエラー: {error_message}")
+                        st.warning("このアプリケーションはSELECT文のみ実行可能です。データの変更・削除を行うSQL操作は許可されていません。")
+                        st.session_state.messages[st.session_state.active_source].append({
+                            "role": "assistant",
+                            "content": f"申し訳ございません。生成されたSQLが安全性チェックに失敗しました。\n\nエラー: {error_message}\n\nこのアプリケーションはSELECT文のみ実行可能です。",
+                            "sql": sql_query,
+                            "error": error_message
+                        })
+                        st.stop()
 
                     # クエリ実行
                     try:
