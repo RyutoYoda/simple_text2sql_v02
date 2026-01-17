@@ -55,14 +55,6 @@ graph TB
 
     UI <--> Session
     DataSources --> Router
-
-    style NLQ fill:#e1f5fe
-    style OpenAI fill:#fff3e0
-    style SQL fill:#f3e5f5
-    style Router fill:#fce4ec
-    style Result fill:#e8f5e9
-    style Session fill:#fff9c4
-    style DataSources fill:#f0f4c3
 ```
 
 ## レイヤー構成
