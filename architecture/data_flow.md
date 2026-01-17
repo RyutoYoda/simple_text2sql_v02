@@ -6,13 +6,16 @@
 sequenceDiagram
     participant User as ユーザー
     participant UI as Streamlit UI
+    participant Session as セッション管理
     participant Connector as データコネクタ
     participant DB as データソース
     participant OpenAI as OpenAI API
     participant DuckDB as DuckDB
     participant Viz as Plotly
 
-    User->>UI: データソース選択
+    Note over User,UI: データソース追加フェーズ
+    User->>UI: データソース種類選択
+    User->>UI: データソース名入力<br/>(例: "売上データ2024")
     UI->>Connector: connect(認証情報)
     Connector->>DB: 接続確立
     DB-->>Connector: 接続成功
@@ -24,13 +27,22 @@ sequenceDiagram
     DB-->>Connector: リスト返却
     Connector-->>UI: 選択肢表示
 
-    User->>UI: データ取得ボタンクリック
+    User->>UI: 追加ボタンクリック
     UI->>Connector: get_sample_data()
     Connector->>DB: SELECT * LIMIT 1000
     DB-->>Connector: データ返却
     Connector-->>UI: DataFrame
+    UI->>Session: データソース登録<br/>(名前, df, connector)
+    Session-->>UI: 登録完了
+
+    Note over User,UI: 分析フェーズ
+    User->>UI: データソース切り替え
+    UI->>Session: アクティブソース変更
+    Session-->>UI: データ切り替え完了
 
     User->>UI: 自然言語で質問入力
+    UI->>Session: アクティブソースのデータ取得
+    Session-->>UI: DataFrame, Connector
     UI->>UI: スキーマ情報抽出
     UI->>OpenAI: プロンプト送信<br/>(質問+スキーマ+サンプルデータ)
     OpenAI-->>UI: SQL生成
@@ -47,6 +59,7 @@ sequenceDiagram
 
     UI->>Viz: DataFrame渡す
     Viz-->>UI: グラフ生成
+    UI->>Session: チャット履歴保存<br/>(データソースごと)
     UI-->>User: 結果表示<br/>(テーブル+グラフ)
 ```
 
