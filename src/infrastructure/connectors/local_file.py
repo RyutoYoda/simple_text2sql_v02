@@ -14,26 +14,28 @@ class LocalFileConnector(BaseConnector):
     
     def connect(self, credentials: Dict[str, Any]) -> None:
         """ファイルを読み込む
-        
+
         Args:
             credentials: {
                 "file_path": "path/to/file.csv",
-                "file_type": "csv" or "parquet"
+                "file_type": "csv" or "parquet" or "excel"
             }
         """
         self.file_path = credentials['file_path']
         file_type = credentials.get('file_type', 'csv').lower()
-        
+
         if not os.path.exists(self.file_path):
             raise FileNotFoundError(f"File not found: {self.file_path}")
-        
+
         if file_type == 'csv':
             self.df = pd.read_csv(self.file_path)
         elif file_type == 'parquet':
             self.df = pd.read_parquet(self.file_path)
+        elif file_type in ['excel', 'xlsx', 'xls']:
+            self.df = pd.read_excel(self.file_path)
         else:
             raise ValueError(f"Unsupported file type: {file_type}")
-        
+
         self.is_connected = True
     
     def list_datasets(self) -> List[str]:

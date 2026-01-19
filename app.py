@@ -145,8 +145,8 @@ with st.sidebar:
         source_name = st.text_input("データソース名", placeholder="例: 売上データ_2024")
         uploaded_file = st.file_uploader(
             "ファイルをアップロード",
-            type=["csv", "parquet"],
-            help="CSVまたはParquetファイルをアップロードしてください",
+            type=["csv", "parquet", "xlsx", "xls"],
+            help="CSV、Parquet、またはExcelファイルをアップロードしてください",
             key="local_file_uploader"
         )
         if uploaded_file and source_name:
@@ -154,8 +154,10 @@ with st.sidebar:
                 try:
                     if uploaded_file.name.endswith(".csv"):
                         df = pd.read_csv(uploaded_file)
-                    else:
+                    elif uploaded_file.name.endswith(".parquet"):
                         df = pd.read_parquet(uploaded_file)
+                    elif uploaded_file.name.endswith((".xlsx", ".xls")):
+                        df = pd.read_excel(uploaded_file)
 
                     # データソースを追加
                     st.session_state.data_sources[source_name] = {

@@ -5,6 +5,7 @@ duckdb
 openai>=1.0.0
 numpy
 python-dotenv
+openpyxl
 
 db-dtypes
 gspread 
