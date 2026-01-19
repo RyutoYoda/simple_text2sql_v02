@@ -721,7 +721,7 @@ if st.session_state.active_source and st.session_state.active_source in st.sessi
                 with st.chat_message("assistant"):
                     with st.spinner("SQL生成中..."):
                         response = client.chat.completions.create(
-                            model="gpt-3.5-turbo",
+                            model="gpt-5-nano",
                             messages=[
                                 {"role": "system", "content": "あなたはSQL生成の専門家です。"},
                                 {"role": "user", "content": sql_generation_prompt}
@@ -779,7 +779,7 @@ if st.session_state.active_source and st.session_state.active_source in st.sessi
 """
                             try:
                                 summary_response = client.chat.completions.create(
-                                    model="gpt-3.5-turbo",
+                                    model="gpt-5-nano",
                                     messages=[
                                         {"role": "system", "content": "あなたはデータ分析の専門家です。"},
                                         {"role": "user", "content": summary_prompt}
