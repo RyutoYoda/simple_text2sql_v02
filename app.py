@@ -152,7 +152,7 @@ with st.sidebar:
             key="local_file_uploader"
         )
         if uploaded_file and source_name:
-            if st.button("📥 追加", key="add_local"):
+            if st.button("追加", key="add_local"):
                 try:
                     if uploaded_file.name.endswith(".csv"):
                         df = pd.read_csv(uploaded_file)
@@ -220,7 +220,7 @@ with st.sidebar:
                     selected_table = st.selectbox("テーブル", table_names, key="bq_table")
 
                     if selected_table:
-                        if st.button("📥 追加", key="add_bq"):
+                        if st.button("追加", key="add_bq"):
                             with st.spinner("データ取得中..."):
                                 full_table_id = f"{client.project}.{selected_dataset}.{selected_table}"
                                 query = f"SELECT * FROM `{full_table_id}` LIMIT 1000"
@@ -302,7 +302,7 @@ with st.sidebar:
                             selected_table = st.selectbox("テーブル", tables, key="sf_table")
 
                             if selected_table:
-                                if st.button("📥 追加", key="add_sf"):
+                                if st.button("追加", key="add_sf"):
                                     with st.spinner("データ取得中..."):
                                         df = connector.get_sample_data(selected_db, selected_table, selected_schema)
 
@@ -375,7 +375,7 @@ with st.sidebar:
                             selected_table = st.selectbox("テーブル", tables, key="db_table_select")
 
                             if selected_table:
-                                if st.button("📥 追加", key="add_db"):
+                                if st.button("追加", key="add_db"):
                                     with st.spinner("データ取得中..."):
                                         df = connector.get_sample_data(selected_catalog, selected_table, schema=selected_schema)
 
@@ -443,7 +443,7 @@ with st.sidebar:
                 selected_sheet = st.selectbox("シート", sheets, key="gs_sheet_select")
 
                 if selected_sheet:
-                    if st.button("📥 追加", key="add_gs"):
+                    if st.button("追加", key="add_gs"):
                         with st.spinner("データ取得中..."):
                             df = connector.get_sample_data("", selected_sheet)
 
@@ -1136,7 +1136,7 @@ else:
 2. **データソース名を入力**: わかりやすい名前をつける（例: "売上データ2024"）
 3. **接続設定**: 必要な認証情報を入力して接続
 4. **テーブル選択**: データセット/テーブルを選択
-5. **追加**: 「📥 追加」ボタンでデータソースを追加
+5. **追加**: 「追加」ボタンでデータソースを追加
 
 #### 分析の実行
 1. **データソース切り替え**: サイドバーのドロップダウンから選択
@@ -1145,7 +1145,7 @@ else:
 4. **結果確認**: SQL、グラフ、分析要約が自動生成
 5. **レポート保存**: HTMLレポートやCSVをダウンロード
 
-### 📊 対応データソース
+### 対応データソース
 
 - **ローカルファイル**: CSV, Parquet
 - **BigQuery**: Google Cloud BigQuery
@@ -1153,14 +1153,14 @@ else:
 - **Databricks**: Personal Access Token認証
 - **Google Sheets**: サービスアカウント認証
 
-### ✨ 複数データソース機能
+### 複数データソース機能
 
 - 複数のデータソースを同時に接続可能
 - サイドバーで簡単に切り替え
 - 各データソースごとに独立したチャット履歴
-- 不要なデータソースは🗑️ボタンで削除
+- 不要なデータソースは削除ボタンで削除
 
-### 💡 質問例
+### 質問例
 
 - 「月別の売上推移を見せて」
 - 「カテゴリ別の売上を棒グラフで表示」
