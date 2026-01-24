@@ -17,3 +17,7 @@ scikit-learn
 snowflake-connector-python
 cryptography
 databricks-sql-connector
+
+# MCP (Model Context Protocol) Support
+mcp>=1.0.0
+httpx

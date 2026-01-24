@@ -23,6 +23,7 @@ load_dotenv()
 # 新しいコネクタシステムのインポート
 try:
     from src.infrastructure.connectors.factory import ConnectorFactory
+    from src.infrastructure.connectors.mcp import MCPConnectorSync
     USE_NEW_CONNECTORS = True
 except ImportError as e:
     USE_NEW_CONNECTORS = False
@@ -123,7 +124,8 @@ with st.sidebar:
             "BigQuery🔍": "bigquery",
             "Googleスプレッドシート🟩": "sheets",
             "Snowflake❄️": "snowflake",
-            "Databricks🧱": "databricks"
+            "Databricks🧱": "databricks",
+            "MCP Servers🔌": "mcp"
         }
     else:
         data_sources = {
@@ -463,27 +465,105 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"エラー: {e}")
 
+    elif source == "MCP Servers🔌" and USE_NEW_CONNECTORS:
+        with st.expander("接続設定", expanded=True):
+            source_name = st.text_input("データソース名", placeholder="例: dbt Cloud MCP", key="mcp_name")
+
+            # .envから取得 or 手動入力
+            env_url = os.getenv("MCP_SERVER_URL", "")
+            env_api_key = os.getenv("MCP_API_KEY", "")
+
+            server_url = st.text_input(
+                "MCPサーバーURL",
+                value=env_url,
+                placeholder="https://your-mcp-server.com/mcp",
+                key="mcp_url",
+                help="Streamable HTTP対応のMCPサーバーURL"
+            )
+
+            api_key = st.text_input(
+                "API Key（オプション）",
+                value=env_api_key,
+                type="password",
+                placeholder="your-api-key-here",
+                key="mcp_api_key",
+                help="認証が必要な場合はAPI Keyを入力"
+            )
+
+            if all([server_url, source_name]):
+                if st.button("🔗 MCPサーバーに接続", key="mcp_connect"):
+                    try:
+                        connector = MCPConnectorSync()
+
+                        with st.spinner("接続中..."):
+                            # MCPサーバーに接続
+                            connection_info = connector.connect(
+                                server_url=server_url,
+                                api_key=api_key if api_key else None,
+                                server_name=source_name
+                            )
+
+                            # ツール一覧を取得
+                            tools = connector.list_tools()
+
+                            # データソースを追加（DataFrameは不要、MCPツールを保持）
+                            st.session_state.data_sources[source_name] = {
+                                "type": "mcp",
+                                "connector": connector,
+                                "server_url": server_url,
+                                "tools": tools,
+                                "connection_info": connection_info,
+                                "df": None  # MCPはDataFrameを持たない
+                            }
+                            st.session_state.active_source = source_name
+                            st.session_state.messages[source_name] = []
+
+                            st.success(f"✅ {source_name}に接続しました！")
+                            st.info(f"利用可能なツール: {len(tools)}個")
+
+                            # ツール一覧を表示
+                            with st.expander("📋 利用可能なツール一覧", expanded=False):
+                                for tool in tools:
+                                    st.markdown(f"**{tool.get('name')}**")
+                                    if 'description' in tool:
+                                        st.caption(tool['description'])
+
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"接続エラー: {e}")
+                        import traceback
+                        st.error(traceback.format_exc())
+
 # メインエリア
-st.title("🧞 Vizzy - Adhoc Analytics Assistant")
+st.title("Vizzy - Adhoc Analytics Assistant")
 
 # アクティブなデータソースがあるかチェック
 if st.session_state.active_source and st.session_state.active_source in st.session_state.data_sources:
     active_data = st.session_state.data_sources[st.session_state.active_source]
     df = active_data['df']
 
-    # 日付カラムの自動変換
-    for col in df.columns:
-        if "date" in col.lower() or "time" in col.lower():
-            try:
-                df[col] = pd.to_datetime(df[col])
-            except:
-                pass
+    # MCP Serversの場合の処理
+    is_mcp = active_data.get('type') == 'mcp'
+
+    # MCPでない場合のみDataFrame処理を実行
+    if not is_mcp and df is not None:
+        # 日付カラムの自動変換
+        for col in df.columns:
+            if "date" in col.lower() or "time" in col.lower():
+                try:
+                    df[col] = pd.to_datetime(df[col])
+                except:
+                    pass
 
     # データソースの種類を判定
     connector = None
     duck_conn = None
 
-    if active_data['connector']:
+    if is_mcp:
+        # MCPの場合
+        connector = active_data['connector']
+        dialect = 'mcp'
+    elif active_data['connector']:
         connector = active_data['connector']
         dialect = connector.get_dialect() if hasattr(connector, 'get_dialect') else 'duckdb'
     else:
@@ -491,7 +571,7 @@ if st.session_state.active_source and st.session_state.active_source in st.sessi
         dialect = 'duckdb'
 
     # DuckDBが必要な場合は常に初期化
-    if dialect == 'duckdb':
+    if dialect == 'duckdb' and df is not None:
         duck_conn = duckdb.connect()
         duck_conn.register("data", df)
 
@@ -499,10 +579,32 @@ if st.session_state.active_source and st.session_state.active_source in st.sessi
     col_left, col_right = st.columns([1, 2])
 
     with col_left:
-        st.subheader("📊 データプレビュー")
-        st.write(f"**{st.session_state.active_source}**")
-        st.write(f"データサイズ: {len(df):,}行 × {len(df.columns)}列")
-        st.dataframe(df.head(100), height=600)
+        if is_mcp:
+            st.subheader("🔌 MCP Server情報")
+            st.write(f"**{st.session_state.active_source}**")
+            server_info = connector.get_server_info()
+            st.write(f"ツール数: {server_info['tools_count']}")
+            st.write(f"接続状態: {'🟢 接続中' if server_info['is_connected'] else '🔴 切断'}")
+
+            # ツール一覧を表示
+            with st.expander("📋 利用可能なツール", expanded=True):
+                tools = active_data.get('tools', [])
+                if tools:
+                    for tool in tools:
+                        st.markdown(f"**{tool.get('name', 'Unknown')}**")
+                        if 'description' in tool:
+                            st.caption(tool['description'])
+                        st.divider()
+                else:
+                    st.info("ツールがありません")
+        else:
+            st.subheader("📊 データプレビュー")
+            st.write(f"**{st.session_state.active_source}**")
+            if df is not None:
+                st.write(f"データサイズ: {len(df):,}行 × {len(df.columns)}列")
+                st.dataframe(df.head(100), height=600)
+            else:
+                st.info("データがありません")
 
     with col_right:
         st.subheader("💬 データ分析チャット")
@@ -605,14 +707,124 @@ if st.session_state.active_source and st.session_state.active_source in st.sessi
 
             client = OpenAI(api_key=openai_api_key)
 
-            # スキーマ情報取得
+            # MCPの場合は別処理
+            if is_mcp:
+                # MCPツールを使った処理
+                tools = active_data.get('tools', [])
+
+                # OpenAI Tool形式に変換
+                openai_tools = []
+                for tool in tools:
+                    openai_tool = {
+                        "type": "function",
+                        "function": {
+                            "name": tool.get('name', 'unknown'),
+                            "description": tool.get('description', ''),
+                            "parameters": tool.get('inputSchema', {"type": "object", "properties": {}})
+                        }
+                    }
+                    openai_tools.append(openai_tool)
+
+                # LLMにツールを使って質問に答えさせる
+                with st.chat_message("assistant"):
+                    with st.spinner("処理中..."):
+                        # 会話履歴を使う（システムプロンプト + 履歴 + 新しい質問）
+                        messages = [
+                            {"role": "system", "content": f"あなたは{st.session_state.active_source}のMCPサーバーに接続されたアシスタントです。利用可能なツールを使ってユーザーの質問に答えてください。データベースのテーブル情報を取得したり、SQLクエリを実行したりできます。"}
+                        ]
+
+                        # 過去の会話履歴を追加（最新10件まで）
+                        for msg in st.session_state.messages[st.session_state.active_source][-10:]:
+                            messages.append({"role": msg["role"], "content": msg["content"]})
+
+                        # 新しい質問を追加
+                        messages.append({"role": "user", "content": prompt})
+
+                        response = client.chat.completions.create(
+                            model="gpt-4o",
+                            messages=messages,
+                            tools=openai_tools if openai_tools else None,
+                            tool_choice="auto" if openai_tools else None
+                        )
+
+                        # ツール呼び出しがあるか確認
+                        if response.choices[0].message.tool_calls:
+                            tool_calls = response.choices[0].message.tool_calls
+                            st.info(f"🔧 {len(tool_calls)}個のツールを実行中...")
+
+                            # アシスタントのメッセージを追加（ツール呼び出し情報含む）
+                            assistant_msg = response.choices[0].message
+                            messages.append({
+                                "role": "assistant",
+                                "content": assistant_msg.content or "",
+                                "tool_calls": [
+                                    {
+                                        "id": tc.id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": tc.function.name,
+                                            "arguments": tc.function.arguments
+                                        }
+                                    } for tc in assistant_msg.tool_calls
+                                ]
+                            })
+
+                            # ツール実行結果を格納
+                            for tool_call in tool_calls:
+                                tool_name = tool_call.function.name
+                                import json
+                                tool_args = json.loads(tool_call.function.arguments)
+
+                                with st.expander(f"実行中: {tool_name}"):
+                                    st.json(tool_args)
+
+                                # MCPツール実行
+                                try:
+                                    result = connector.call_tool(tool_name, tool_args)
+                                    messages.append({
+                                        "role": "tool",
+                                        "tool_call_id": tool_call.id,
+                                        "content": str(result)
+                                    })
+                                    st.success(f"✅ {tool_name} 実行完了")
+                                except Exception as e:
+                                    st.error(f"❌ {tool_name} 実行エラー: {e}")
+                                    messages.append({
+                                        "role": "tool",
+                                        "tool_call_id": tool_call.id,
+                                        "content": f"Error: {str(e)}"
+                                    })
+
+                            # ツール結果を含めて再度LLMに投げる
+                            final_response = client.chat.completions.create(
+                                model="gpt-4o",
+                                messages=messages
+                            )
+
+                            assistant_message = final_response.choices[0].message.content
+                        else:
+                            assistant_message = response.choices[0].message.content
+
+                        st.markdown(assistant_message)
+
+                        # メッセージを履歴に追加
+                        st.session_state.messages[st.session_state.active_source].append({
+                            "role": "assistant",
+                            "content": assistant_message,
+                            "data": True
+                        })
+
+                        st.rerun()
+
+            # スキーマ情報取得（非MCP用）
             schema = {}
-            for col in df.columns:
-                dtype = str(df[col].dtype)
-                schema[col] = dtype
+            if df is not None:
+                for col in df.columns:
+                    dtype = str(df[col].dtype)
+                    schema[col] = dtype
 
             # サンプルデータ
-            sample_data = df.head(3).to_string()
+            sample_data = df.head(3).to_string() if df is not None else ""
 
             # SQL生成プロンプト（データベース別に最適化）
             if dialect == 'snowflake':
