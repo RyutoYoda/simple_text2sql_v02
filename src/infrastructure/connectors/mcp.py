@@ -57,7 +57,7 @@ class MCPConnector:
                         "protocolVersion": "2024-11-05",
                         "capabilities": {},
                         "clientInfo": {
-                            "name": "Vizzy",
+                            "name": "FlashViz",
                             "version": "1.0.0"
                         }
                     }

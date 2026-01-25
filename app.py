@@ -29,7 +29,7 @@ except ImportError as e:
     USE_NEW_CONNECTORS = False
     st.error(f"新しいコネクタシステムが利用できません: {e}")
 
-st.set_page_config(page_title="Vizzye", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="FlashViz", layout="wide", initial_sidebar_state="expanded")
 
 # SQLバリデーション関数
 def is_safe_query(sql: str) -> tuple[bool, str]:
@@ -535,7 +535,7 @@ with st.sidebar:
                         st.error(traceback.format_exc())
 
 # メインエリア
-st.title("Vizzy - Adhoc Analytics Assistant")
+st.title("FlashViz - Adhoc Analytics Assistant")
 
 # アクティブなデータソースがあるかチェック
 if st.session_state.active_source and st.session_state.active_source in st.session_state.data_sources:
@@ -638,7 +638,7 @@ if st.session_state.active_source and st.session_state.active_source in st.sessi
                             html_report = f"""
                             <html>
                             <head>
-                                <title>Vizzy分析レポート - {message['timestamp'].strftime('%Y/%m/%d %H:%M')}</title>
+                                <title>FlashViz分析レポート - {message['timestamp'].strftime('%Y/%m/%d %H:%M')}</title>
                                 <style>
                                     body {{ font-family: Arial, sans-serif; margin: 40px; }}
                                     h1, h2 {{ color: #333; }}
@@ -651,7 +651,7 @@ if st.session_state.active_source and st.session_state.active_source in st.sessi
                                 </style>
                             </head>
                             <body>
-                                <h1>Vizzy 分析レポート</h1>
+                                <h1>FlashViz 分析レポート</h1>
                                 <p><strong>作成日時:</strong> {message['timestamp'].strftime('%Y年%m月%d日 %H:%M:%S')}</p>
 
                                 <h2>質問</h2>
@@ -1078,7 +1078,7 @@ if st.session_state.active_source and st.session_state.active_source in st.sessi
                                 </style>
                             </head>
                             <body>
-                                <h1>Vizzy 分析レポート</h1>
+                                <h1>FlashViz 分析レポート</h1>
                                 <p><strong>作成日時:</strong> {assistant_message['timestamp'].strftime('%Y年%m月%d日 %H:%M:%S')}</p>
 
                                 <h2>質問</h2>

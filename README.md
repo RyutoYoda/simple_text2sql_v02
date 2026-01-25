@@ -1,4 +1,4 @@
-# Vizzy - Adhoc Analytics Assistant
+# FlashViz - Adhoc Analytics Assistant
 読み取り専用権限でデータベースに接続し、自然言語でアドホック分析を行えるAIアシスタントツールです。SELECT文のみ実行可能で、安全にデータ探索ができます。
 ## 使用技術
 
