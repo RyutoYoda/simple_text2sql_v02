@@ -1018,7 +1018,7 @@ if st.session_state.active_source and st.session_state.active_source in st.sessi
                                 fig.update_layout(plot_bgcolor='white', paper_bgcolor='white', font=dict(color='#333333'))
                                 st.plotly_chart(fig, width="stretch")
 
-                            elif any(word in prompt for word in ["時系列", "推移", "変化", "折れ線"]) or any(word in query_lower for word in ["trend", "line"]):
+                            elif any(word in prompt for word in ["時系列", "推移", "変化", "折れ線", "線グラフ", "線"]) or any(word in query_lower for word in ["trend", "line"]):
                                 fig = px.line(result_df, x=result_df.columns[0], y=result_df.columns[1],
                                             title=prompt, color_discrete_sequence=['#4361ee'])
                                 fig.update_layout(plot_bgcolor='white', paper_bgcolor='white', font=dict(color='#333333'),
